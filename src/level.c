@@ -1,10 +1,17 @@
 /* Loading a map from the level pack, and the geometry queries on it. */
 #include "level.h"
 #include "game.h"
+#include "hw.h"
 
 level_t lvl;
 u16 validcount = 1;
-const u8 *pack;                 /* set by the platform code */
+/* The level pack (tools/wad2cy.py) is a file, read with hw_pack_read: its
+ * header, map list and sprites stay in memory, and each map is read when
+ * it is played. */
+static u8 *pack;                /* header and tables */
+static u8 *sprites;             /* the sprites, from pack offset spr_start */
+static u8 *mapbuf;              /* the map being played (lvl.reject points in) */
+static u32 spr_start, pack_size;
 
 #define ARENA_SIZE (200L * 1024)
 static u8 arena[ARENA_SIZE];
@@ -24,14 +31,52 @@ static void *alloc(u32 n)
 static u16 rd16(const u8 *p) { return (u16)(p[0] << 8 | p[1]); }
 static u32 rd32(const u8 *p) { return (u32)rd16(p) << 16 | rd16(p + 2); }
 
-int level_count(void) { return rd16(pack + 6); }
+/* PACK: "CYDM", u16 version (3), u16 maps, u16 sprite slots, u16 0,
+ * u32 start of the sprites, u32 pack size, then per map 4 name bytes and
+ * u32 offset, then u32 offset of each sprite (0: none). The maps come
+ * first, the sprites last. Offsets are from the pack start. */
+#define PACK_HEAD 20
+#define MAP_ENTRY(i) (pack + PACK_HEAD + 8 * (i))
 
-static const u8 *map_data(int i) { return pack + rd32(pack + 12 + 4 * i); }
+int level_count(void) { return pack ? rd16(pack + 6) : 0; }
+
+static u32 map_offset(int i) { return rd32(MAP_ENTRY(i) + 4); }
+
+static u32 map_size(int i)
+{
+    return (i + 1 < level_count() ? map_offset(i + 1) : spr_start) - map_offset(i);
+}
+
+int pack_open(void)
+{
+    u8 head[PACK_HEAD], *p;
+    u32 table, n, biggest = 0;
+    int i;
+    pack = NULL;
+    if (!hw_pack_read(0, head, PACK_HEAD)) return 0;
+    if (head[0] != 'C' || head[1] != 'Y' || head[2] != 'D' || head[3] != 'M' || rd16(head + 4) != 3)
+        return 0;
+    table = PACK_HEAD + 8L * rd16(head + 6) + 4L * rd16(head + 8);
+    spr_start = rd32(head + 12);
+    pack_size = rd32(head + 16);
+    p = hw_alloc(table + pack_size - spr_start);
+    if (!p || !hw_pack_read(0, p, table) || !hw_pack_read(spr_start, p + table, pack_size - spr_start))
+        return 0;
+    pack = p;
+    sprites = p + table;
+    for (i = 0; i < level_count(); i++) {
+        n = map_size(i);
+        if (n > biggest) biggest = n;
+    }
+    mapbuf = hw_alloc(biggest);
+    if (!mapbuf) pack = NULL;
+    return pack != NULL;
+}
 
 const char *level_name(int i)
 {
     static char name[5];
-    const u8 *m = map_data(i);
+    const u8 *m = MAP_ENTRY(i);
     int k;
     for (k = 0; k < 4; k++) name[k] = (char)m[k];
     name[4] = 0;
@@ -51,11 +96,11 @@ int level_find(const char *name)
 
 const u8 *sprite_get(int cls, int frame)
 {
-    int slot = cls * 5 + frame, maps = level_count();
+    int slot = cls * 5 + frame;
     u32 off;
-    if (slot >= rd16(pack + 8)) return NULL;
-    off = rd32(pack + 12 + 4 * (maps + slot));
-    return off ? pack + off : NULL;
+    if (!pack || slot >= rd16(pack + 8)) return NULL;
+    off = rd32(MAP_ENTRY(level_count()) + 4 * slot);
+    return off ? sprites + (off - spr_start) : NULL;
 }
 
 /* a map part: count and data */
@@ -67,10 +112,11 @@ static const u8 *part(const u8 *m, int k, s16 *count)
 
 int level_load(int idx)
 {
-    const u8 *m = map_data(idx), *p;
+    const u8 *m = mapbuf, *p;
     s16 i, n;
     int k;
 
+    if (!hw_pack_read(map_offset(idx), mapbuf, map_size(idx))) return 0;
     arena_used = 0;
     mset(&lvl, 0, sizeof lvl);
     for (k = 0; k < 4; k++) lvl.name[k] = (char)m[k];

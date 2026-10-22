@@ -30,6 +30,9 @@ void hw_present(void);      /* fb to the screen */
 void hw_present_rows(s16 rows);     /* only its top rows */
 void hw_idle(void);         /* keep the watchdog happy */
 void hw_debug(const char *s);
+/* the level pack file: read n bytes at offset off, 0 on failure */
+int hw_pack_read(u32 off, void *buf, u32 n);
+void *hw_alloc(u32 n);      /* memory for the pack, NULL if none */
 extern const u32 HW_HZ;
 
 #endif

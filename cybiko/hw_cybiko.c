@@ -10,9 +10,15 @@
  *   clock     TPU channel 5, which CyOS runs free at clock / 256 (72 kHz)
  *   watchdog  CyOS enables it; with its interrupts off we must reset it
  *
+ * The level pack is a file read with CyOS's own functions (cybiko/cyos.ld):
+ * found on the MP3 cartridge's card (/MP3/) or in the Cybiko's storage.
+ * While the game has the machine, a read hands it back to CyOS for the
+ * time it takes (cyos_call below).
+ *
  * See docs/cybiko-internals.md in the Dragonfruit emulator for the details. */
 #include "../src/hw.h"
 #include "../src/render.h"
+#include "../src/level.h"
 
 #define REG8(a) (*(volatile u8 *)(a))
 #define REG16(a) (*(volatile u16 *)(a))
@@ -22,6 +28,7 @@
 
 const u32 HW_HZ = 72000;
 static u8 saved_ccr;
+static u8 owned;                /* the game has the machine */
 static u32 clock_hi;
 static u16 clock_last;
 
@@ -29,6 +36,18 @@ void doom_main(void);
 u8 irq_off(void);               /* rt.s: mask interrupts, return the old CCR */
 void irq_restore(u8 ccr);
 void run_on_stack(void (*fn)(void), void *top);
+/* rt.s: fn(arg) on the stack run_on_stack was called on */
+long on_cyos_stack(long (*fn)(void *), void *arg);
+
+/* CyOS (cybiko/cyos.ld; the names are the Cybiko SDK's) */
+void *cy_malloc(u32 n);
+void cy_free(void *p);
+void *cy_FileInput_ctor(void *fi, int magic);
+u8 cy_FileInput_open(void *fi, const char *name);
+long cy_Input_seek(void *in, long pos, int mode);
+long cy_Input_read(void *in, void *buf, long n);
+void cy_Input_dtor(void *in, int memory_flag);
+#define LEAVE_MEMORY 2
 
 /* The game runs with its screen buffer (fb, see link.ld) and its stack in
  * the on-chip RAM from IRAM_START to IRAM_END. CyOS's data there is kept in
@@ -38,6 +57,7 @@ void run_on_stack(void (*fn)(void), void *top);
 #define IRAM_END 0xfffc00UL
 #define DTCER 0xffff30UL
 static u8 iram_save[IRAM_END - IRAM_START];
+static u8 iram_game[IRAM_END - IRAM_START];  /* the game's, during cyos_call */
 static u8 dtcer_save[6];
 extern u8 _iram_stack_top[], _iram_code[], _iram_code_end[];
 #define IRAM_CODE 0xfffa00UL
@@ -59,15 +79,46 @@ void hw_init(void)
     mcpy((void *)IRAM_CODE, _iram_code, (u32)(_iram_code_end - _iram_code));
     hw_idle();
     clock_last = TCNT5;
+    owned = 1;
 }
 
 void hw_shutdown(void)
 {
     u8 i;
+    owned = 0;
     mcpy((void *)IRAM_START, iram_save, sizeof iram_save);
     for (i = 0; i < 6; i++) REG8(DTCER + i) = dtcer_save[i];
     hw_idle();
     irq_restore(saved_ccr);
+}
+
+/* Runs on CyOS's stack: put CyOS's on-chip RAM, DTC and interrupts back,
+ * call fn, then take the machine again. */
+static long (*cyos_fn)(void *);
+
+static long cyos_side(void *arg)
+{
+    long r;
+    u8 i;
+    mcpy(iram_game, (void *)IRAM_START, sizeof iram_game);
+    mcpy((void *)IRAM_START, iram_save, sizeof iram_save);
+    for (i = 0; i < 6; i++) REG8(DTCER + i) = dtcer_save[i];
+    hw_idle();
+    irq_restore(saved_ccr);
+    r = cyos_fn(arg);
+    irq_off();
+    for (i = 0; i < 6; i++) REG8(DTCER + i) = 0;
+    mcpy(iram_save, (void *)IRAM_START, sizeof iram_save);
+    mcpy((void *)IRAM_START, iram_game, sizeof iram_game);
+    hw_idle();
+    return r;
+}
+
+static long cyos_call(long (*fn)(void *), void *arg)
+{
+    if (!owned) return fn(arg);
+    cyos_fn = fn;
+    return on_cyos_stack(cyos_side, arg);
 }
 
 u32 hw_clock(void)
@@ -139,17 +190,61 @@ void hw_debug(const char *s)
     }
 }
 
-extern const u8 levelpack[];
-extern const u8 *pack;
+/* the level pack */
+static const char *const pack_paths[] = { "/MP3/doom.dat", "doom.dat" };
+static const char *pack_path;
+static u8 file_input[96];       /* struct FileInput: 84 bytes */
+static struct { u32 off, n; void *buf; } rd;
+
+static long pack_read(void *unused)
+{
+    long r = -1;
+    (void)unused;
+    cy_FileInput_ctor(file_input, 1);
+    if (cy_FileInput_open(file_input, pack_path) && cy_Input_seek(file_input, (long)rd.off, 0) == (long)rd.off)
+        r = cy_Input_read(file_input, rd.buf, (long)rd.n);
+    cy_Input_dtor(file_input, LEAVE_MEMORY);
+    return r;
+}
+
+int hw_pack_read(u32 off, void *buf, u32 n)
+{
+    long r;
+    u32 t = hw_clock();
+    rd.off = off;
+    rd.n = n;
+    rd.buf = buf;
+    r = cyos_call(pack_read, 0);
+    clock_hi = t;               /* the time CyOS had does not count */
+    clock_last = TCNT5;
+    return r == (long)n;
+}
+
+#define MAX_ALLOCS 4
+static void *allocs[MAX_ALLOCS];
+
+void *hw_alloc(u32 n)
+{
+    u8 i;
+    for (i = 0; i < MAX_ALLOCS; i++)
+        if (!allocs[i]) return allocs[i] = cy_malloc(n);
+    return 0;
+}
 
 long main(int argc, char **argv, char start)
 {
+    u8 i;
     (void)argc;
     (void)argv;
     if (!start) return 0;
-    pack = levelpack;
+    for (i = 0; i < sizeof pack_paths / sizeof pack_paths[0]; i++) {
+        pack_path = pack_paths[i];
+        if (pack_open()) break;
+    }
     hw_init();
     run_on_stack(doom_main, _iram_stack_top);
     hw_shutdown();
+    for (i = 0; i < MAX_ALLOCS; i++)
+        if (allocs[i]) cy_free(allocs[i]);
     return 0;
 }

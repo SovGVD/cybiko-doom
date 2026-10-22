@@ -107,6 +107,7 @@ typedef struct {
 extern level_t lvl;
 extern u16 validcount;
 
+int pack_open(void);                    /* 0 if the pack cannot be read */
 int level_count(void);
 const char *level_name(int i);
 int level_find(const char *name);       /* -1 if not in the pack */

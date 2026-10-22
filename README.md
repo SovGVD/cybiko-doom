@@ -29,16 +29,27 @@ menu makes it a little faster.
 Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
 `binutils-h8300-hms gcc-h8300-hms`).
 
-    ./build.sh doom1.wad                    # E1M1-E1M3
+    ./build.sh doom1.wad                    # all the WAD's maps
     ./build.sh doom1.wad E1M1,E1M2          # pick the maps
 
-The result is `build/doom.app`. Put it on the Cybiko with the Cybiko console
-software, or into `/Cybiko/apps` on the Dragonfruit SD card. It shows up in
-Games (`APPTYPE=root ./build.sh ...` puts it on the main desktop instead).
+This makes two files:
 
-The app holds the maps, so its size depends on them: three maps make a
-160 KB app that needs about 550 KB of RAM when it runs. A real Cybiko has
-little room for files, so keep to a few maps there.
+- `build/doom.app`, the game (about 55 KB). Put it on the Cybiko with the
+  Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
+  card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
+  main desktop instead).
+- `build/doom.dat`, the level pack: the maps and the shrunk sprites. The
+  game looks for it on the MP3 cartridge's card first (`/MP3/doom.dat`, the
+  card's top folder; on Dragonfruit that is `/Cybiko/card/doom.dat` on the
+  SD card) and then in the Cybiko's own storage (next to the app). The
+  shareware episode makes a 600 KB pack, which wants the card; the Cybiko's
+  own storage holds only a few maps (35-100 KB each), so pick them with the
+  second argument there.
+
+The game reads the pack's sprites when it starts and each map when it is
+played. It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
+room for the biggest map in the pack (up to 100 KB in the shareware
+episode).
 
 ## The WAD and its licence
 
@@ -72,13 +83,13 @@ sprites from a Doom IWAD you supply into the app:
 - `src/` the game: renderer (`render.c`), map loading (`level.c`), things
   and physics (`mobj.c`), monsters (`ai.c`), the player (`player.c`), doors,
   lifts and other specials (`spec.c`), menus and the main loop (`main.c`).
-- `cybiko/` the Cybiko side: hardware access (`hw_cybiko.c`), runtime and
-  division helpers (`rt.s`), the link script, icon and help page.
+- `cybiko/` the Cybiko side: hardware access and file reading
+  (`hw_cybiko.c`), runtime and division helpers (`rt.s`), the CyOS
+  functions it calls (`cyos.ld`), the link script, icon and help page.
 - `tools/wad2cy.py` converts a WAD into the level pack;
   `tools/cybiko_mkapp.py` and `tools/cybiko_cap.py` make the CyOS `.app`.
 - `pc/` a PC build of the game code for testing: it writes frames as PGM
-  images (`make -C pc`, then `pc/doom_pc PACK.bin --frames N --shots DIR`
-  with a pack from `tools/wad2cy.py WAD PACK.bin --bin`).
+  images (`make -C pc`, then `pc/doom_pc doom.dat --frames N --shots DIR`).
 
 ## Notes on the Cybiko
 
@@ -88,6 +99,19 @@ sprites from a Doom IWAD you supply into the app:
   DRAM's three, so while the game runs it holds the screen buffer, the stack,
   the renderer's hot tables and its fill loops (`cybiko/link.ld`); CyOS's
   contents are kept aside and put back on exit, and the DTC is off meanwhile.
+- The pack is read with CyOS's own file functions (`FileInput`,
+  `Input_read`; `cybiko/cyos.ld` has their export numbers from the Cybiko
+  SDK). The app imports them like CyOS's own applications do:
+  `cybiko_mkapp.py` turns calls to `0xf00000 + N` into imports of kernel
+  export N. To read a map while the game runs, the game hands the machine
+  back to CyOS for that time (its on-chip RAM, the DTC and the interrupts,
+  on CyOS's stack), so CyOS's own screen can show for a moment while a map
+  loads.
+- The MP3 cartridge's card is CyOS's `/MP3/` only with the cartridge
+  software installed. In the emulator the newer set (`sdflash.dl` 21.1.4,
+  in the "MP3Soft" pack) mounts the card; an older set (`sdflash.dl`
+  21.1.3, "AddPack") did not: its card start stopped after reading the
+  card's CSD.
 - CyOS loads only a small zeroed data area, so the game's tables are stored
   as zeros in the module (the `.app` compression removes them).
 - The CyOS decompressor has an 8 KB window: `cybiko_cap.py` makes no back

@@ -1,7 +1,7 @@
 /* PC test harness: runs the game without a screen. Input comes from a
  * script, and the screen is saved as PGM pictures.
  *
- *   doom_pc PACK.bin [--script FILE] [--frames N] [--shots DIR] [--every K]
+ *   doom_pc doom.dat [--script FILE] [--frames N] [--shots DIR] [--every K]
  *
  * The script has lines "FIRST LAST KEYS": frames FIRST..LAST hold KEYS, a
  * list of letters: u d l r (arrows) f (fire) e (use) x (esc) s (run)
@@ -15,9 +15,9 @@
 #include "../src/hw.h"
 #include "../src/render.h"
 #include "../src/game.h"
+#include "../src/level.h"
 #include "../src/spec.h"
 
-extern const u8 *pack;
 void doom_main(void);
 
 const u32 HW_HZ = 35;
@@ -95,29 +95,29 @@ void hw_idle(void)
     if (frame >= maxframes) longjmp(done, 1);
 }
 
+static FILE *packfile;
+
+int hw_pack_read(u32 off, void *buf, u32 n)
+{
+    return packfile && fseek(packfile, (long)off, SEEK_SET) == 0 && fread(buf, 1, n, packfile) == n;
+}
+
+void *hw_alloc(u32 n) { return malloc(n); }
+
 void hw_init(void) {}
 void hw_shutdown(void) {}
 void hw_debug(const char *s) { (void)s; }
 
 int main(int argc, char **argv)
 {
-    FILE *f;
-    long n;
-    u8 *buf;
     int i;
     if (argc < 2) {
-        fprintf(stderr, "usage: %s PACK.bin [--script F] [--frames N] [--shots DIR] [--every K]\n", argv[0]);
+        fprintf(stderr, "usage: %s doom.dat [--script F] [--frames N] [--shots DIR] [--every K]\n", argv[0]);
         return 1;
     }
-    f = fopen(argv[1], "rb");
-    if (!f) { perror(argv[1]); return 1; }
-    fseek(f, 0, SEEK_END);
-    n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    buf = malloc(n);
-    if (fread(buf, 1, n, f) != (size_t)n) return 1;
-    fclose(f);
-    pack = buf;
+    packfile = fopen(argv[1], "rb");
+    if (!packfile) { perror(argv[1]); return 1; }
+    if (!pack_open()) { fprintf(stderr, "%s: not a Cybiko Doom pack\n", argv[1]); return 1; }
     for (i = 2; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) maxframes = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--every") && i + 1 < argc) every = atoi(argv[++i]);

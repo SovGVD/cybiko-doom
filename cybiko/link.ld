@@ -15,6 +15,7 @@ __iram_stack_top = 0xfffa00;    /* the stack grows down to the .iram data */
 _cell_run = 0xfffa00 + (_cell_run_img - __iram_code);
 _vline = 0xfffa00 + (_vline_img - __iram_code);
 _hw_present_rows = 0xfffa00 + (_hw_present_rows_img - __iram_code);
+INCLUDE cybiko/cyos.ld
 
 SECTIONS
 {

@@ -27,8 +27,12 @@ The module format (CyOS 1.5, found in the Xtreme's own applications):
 A fixup record is a type byte and a 24-bit offset into the image. Type 3
 adds the load address to the 32-bit word there, type 2 to the 24-bit address
 of a jsr/jmp; 0x80+n puts the address of export number (the word's low 24
-bits) of library n there. This tool writes types 2 and 3 only: programs for
-the emulator call it through CY_APP_OP instead of importing CyOS functions.
+bits) of library n there.
+
+CyOS functions: a program calls export N of the kernel ("ordinals") as a
+function at address 0xf00000 + N (cybiko/cyos.ld gives them names). Every
+"jsr @0xf0nnnn" becomes "jsr @N" with a type 0x80 fixup, the way CyOS's own
+applications import them.
 Python 3 and the GNU H8 binutils (binutils-h8300-hms).
 """
 import argparse
@@ -80,6 +84,24 @@ def fixups(a, b):
     return out
 
 
+IMPORT_BASE = 0xF00000
+
+
+def imports(a, b, taken):
+    """Calls of CyOS kernel exports: jsr @(0xf00000 + N). Returns the image
+    with them turned into jsr @N, and their fixup records."""
+    out = bytearray(a)
+    recs = []
+    for i in range(0, len(a) - 3, 2):
+        if i in taken or i + 2 in taken or i - 2 in taken:
+            continue
+        w = struct.unpack_from(">I", a, i)[0]
+        if w >> 24 == 0x5E and (w & 0xFF0000) == IMPORT_BASE and w == struct.unpack_from(">I", b, i)[0]:
+            struct.pack_into(">I", out, i, 0x5E000000 | (w & 0xFFFF))
+            recs.append(i)
+    return bytes(out), recs
+
+
 def module(at0, at1, entry):
     a, syms = image(at0)
     b, syms1 = image(at1)
@@ -89,7 +111,10 @@ def module(at0, at1, entry):
     if syms1["__bss_end"] - syms1["__bss_start"] != bss or len(a) < syms["__image_end"]:
         sys.exit("unexpected layout; link with cybiko/link.ld")
     names = b"ordinals\0"
-    recs = b"".join(struct.pack(">I", t << 24 | off) for t, off in fixups(a, b))
+    fx = fixups(a, b)
+    a, calls = imports(a, b, {off for _, off in fx})
+    fx += [(0x80, off) for off in calls]
+    recs = b"".join(struct.pack(">I", t << 24 | off) for t, off in sorted(fx, key=lambda r: r[1]))
     head = struct.pack(">HHIIIIII16x", 0x91AF, 2, len(a), bss, 0, len(names), len(recs), syms[entry])
     return head + a + names + recs
 

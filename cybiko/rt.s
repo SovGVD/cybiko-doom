@@ -13,16 +13,37 @@ _irq_off:
         rts
 
 ; void run_on_stack(void (*fn)(void), void *top): call fn with the stack
-; pointer at top, then go back to the caller's stack
+; pointer at top, then go back to the caller's stack (kept in cyos_sp)
         .global _run_on_stack
 _run_on_stack:
         stm.l   er4-er6,@-er7
         mov.l   er7,er4
+        mov.l   er7,@_cyos_sp
         mov.l   er1,er7
         jsr     @er0
         mov.l   er4,er7
         ldm.l   @er7+,er4-er6
         rts
+
+; long on_cyos_stack(long (*fn)(void *), void *arg): fn(arg) on the stack
+; run_on_stack was called on, below what is in use there
+        .global _on_cyos_stack
+_on_cyos_stack:
+        stm.l   er4-er6,@-er7
+        mov.l   er7,er4
+        mov.l   @_cyos_sp,er7
+        mov.l   er0,er2
+        mov.l   er1,er0
+        jsr     @er2
+        mov.l   er4,er7
+        ldm.l   @er7+,er4-er6
+        rts
+
+        .section .data
+        .align 2
+_cyos_sp:
+        .long   0
+        .section .text
 
 ; void irq_restore(u8 ccr)
         .global _irq_restore

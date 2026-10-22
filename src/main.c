@@ -390,7 +390,18 @@ void doom_main(void)
 {
     int map = 0;
     render_init();
-    if (!level_count()) return;
+    if (!level_count()) {
+        /* no pack: tell where it goes (see hw_cybiko.c) */
+        clear_screen(6);
+        draw_big_text(48, 8, "DOOM", 0);
+        center_text(36, "DOOM.DAT NOT FOUND", 1);
+        center_text(50, "PUT IT ON THE MP3 CARD", 2);
+        center_text(58, "OR ON THE CYBIKO", 2);
+        center_text(84, "ANY KEY: QUIT", 2);
+        hw_present();
+        wait_key();
+        return;
+    }
     while (title(&map)) {
         play(map);
         map = levelidx;
