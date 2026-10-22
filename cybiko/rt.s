@@ -177,6 +177,13 @@ _mcpy:
         pop.l   er4
 2:      rts
 
+; The routines from here to __iram_code_end fill the screen. hw_init copies
+; them into the on-chip RAM, where the H8S fetches an instruction word in one
+; state instead of three; link.ld gives cell_run and vline their addresses
+; there. So within them, calls are relative (bsr).
+        .align 1
+        .global __iram_code
+__iram_code:
 ; void cell_run(const u8 *c, s16 r, s16 e): one run of sprite cells in a
 ; column (see render.c, which has the same in C for the PC). Cells c are
 ; for cell rows r..e-1; rowtab[] gives their screen rows, cr_tab[] their
@@ -184,8 +191,8 @@ _mcpy:
 ;   er1 rowtab pointer, er2 cell pointer, e3 cells left,
 ;   r3h cr_ebase, r3l shade of the open span, r4 its top, e4 its bottom,
 ;   r5 cr_lo, e5 cr_hi, er6 cr_tab index, r0 / e0 this cell's top / bottom
-        .global _cell_run
-_cell_run:
+        .global _cell_run_img
+_cell_run_img:
         stm.l   er4-er6,@-er7
         mov.w   r2,r3
         sub.w   r1,r3
@@ -235,7 +242,7 @@ _cell_run:
 .Lnew:  sub.w   e6,e6
         cmp.w   r4,e4
         blt     3f
-        jsr     @_cr_fill
+        bsr     _cr_fill:16
 3:      mov.w   r0,r4
         mov.w   e0,e4
         mov.b   r6l,r3l
@@ -245,14 +252,14 @@ _cell_run:
         bne     .Lcell
 .Ldone: cmp.w   r4,e4
         blt     4f
-        jsr     @_cr_fill
+        bsr     _cr_fill:16
 4:      ldm.l   @er7+,er4-er6
         rts
 
 ; void vline(s16 x, s16 y1, s16 y2, u8 shade): fill column x (of 80) from
 ; row y1 to y2 (0 <= y1) with a dithered shade (render.c has it in C too)
-        .global _vline
-_vline:
+        .global _vline_img
+_vline_img:
         cmp.w   r1,r2
         blt     9f
         push.l  er4
@@ -269,7 +276,7 @@ _vline:
         beq     1f
         mov.b   #0xf0,r2l
 1:      mov.b   r2l,@_cr_keep:32
-        jsr     @_cr_fill
+        bsr     _cr_fill:16
         pop.l   er4
 9:      rts
 
@@ -316,4 +323,44 @@ _cr_fill:
         bne     2b
 3:      ldm.l   @er7+,er0-er3
         rts
+
+; void hw_present_rows(s16 rows): the top rows of fb to the LCD (HD66421:
+; index register at 100000, data at 100001; its row 0 is the bottom one),
+; then reset the watchdog
+        .global _hw_present_rows_img
+_hw_present_rows_img:
+        mov.w   r0,r3
+        ble     3f
+        mov.l   #_fb,er1
+        mov.l   #0x100000,er2
+        mov.b   #99,r0l
+1:      mov.b   #2,r0h
+        mov.b   r0h,@er2
+        sub.b   r0h,r0h
+        mov.b   r0h,@(1,er2)
+        mov.b   #3,r0h
+        mov.b   r0h,@er2
+        mov.b   r0l,@(1,er2)
+        mov.b   #4,r0h
+        mov.b   r0h,@er2
+        mov.w   #10,e0
+2:      mov.b   @er1+,r0h
+        mov.b   r0h,@(1,er2)
+        mov.b   @er1+,r0h
+        mov.b   r0h,@(1,er2)
+        mov.b   @er1+,r0h
+        mov.b   r0h,@(1,er2)
+        mov.b   @er1+,r0h
+        mov.b   r0h,@(1,er2)
+        dec.w   #1,e0
+        bne     2b
+        dec.b   r0l
+        dec.w   #1,r3
+        bne     1b
+3:      mov.w   #0x5a00,r0
+        mov.w   r0,@0xffbc:16
+        rts
+
+        .global __iram_code_end
+__iram_code_end:
         .end

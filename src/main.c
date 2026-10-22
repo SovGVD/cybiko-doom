@@ -156,28 +156,32 @@ static int title(int *map)
         fill_rect(0, 0, SCREENW, 30, 6);
         draw_big_text(48, 6, "DOOM", 0);
         draw_text(54, 20, "FOR CYBIKO", 1);
-        draw_text(10, 40, sel == 0 ? ">" : " ", 6);
-        draw_text(18, 40, "MAP", 6);
-        draw_text(70, 40, level_name(*map), 6);
-        draw_text(10, 50, sel == 1 ? ">" : " ", 6);
-        draw_text(18, 50, "SKILL", 6);
-        draw_text(70, 50, skills[skill], 6);
-        draw_text(10, 60, sel == 2 ? ">" : " ", 6);
-        draw_text(18, 60, "ALWAYS RUN", 6);
-        draw_text(70, 60, always_run ? "ON" : "OFF", 6);
+        draw_text(10, 36, sel == 0 ? ">" : " ", 6);
+        draw_text(18, 36, "MAP", 6);
+        draw_text(70, 36, level_name(*map), 6);
+        draw_text(10, 44, sel == 1 ? ">" : " ", 6);
+        draw_text(18, 44, "SKILL", 6);
+        draw_text(70, 44, skills[skill], 6);
+        draw_text(10, 52, sel == 2 ? ">" : " ", 6);
+        draw_text(18, 52, "ALWAYS RUN", 6);
+        draw_text(70, 52, always_run ? "ON" : "OFF", 6);
+        draw_text(10, 60, sel == 3 ? ">" : " ", 6);
+        draw_text(18, 60, "WEAPON", 6);
+        draw_text(70, 60, show_weapon ? "SHOWN" : "HIDDEN (FASTER)", 6);
         center_text(78, "ENTER: PLAY   ESC: QUIT", 4);
         center_text(88, "HELP KEY: FPS ON/OFF", 4);
         hw_present();
         k = wait_key();
         if (k & K_ESC) return 0;
         if (k & (K_USE | K_FIRE)) return 1;
-        if (k & K_UP) sel = sel ? sel - 1 : 2;
-        if (k & K_DOWN) sel = sel < 2 ? sel + 1 : 0;
+        if (k & K_UP) sel = sel ? sel - 1 : 3;
+        if (k & K_DOWN) sel = sel < 3 ? sel + 1 : 0;
         if (k & (K_LEFT | K_RIGHT)) {
             int d = (k & K_LEFT) ? -1 : 1;
             if (sel == 0) *map = (*map + d + level_count()) % level_count();
             if (sel == 1) skill = (u8)((skill + d + 5) % 5);
             if (sel == 2) always_run ^= 1;
+            if (sel == 3) show_weapon ^= 1;
         }
         if (k & K_FPS) show_fps ^= 1;
     }

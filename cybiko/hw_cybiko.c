@@ -17,8 +17,6 @@
 #define REG8(a) (*(volatile u8 *)(a))
 #define REG16(a) (*(volatile u16 *)(a))
 
-#define LCD_INDEX REG8(0x100000)
-#define LCD_DATA REG8(0x100001)
 #define TCNT5 REG16(0xfffea6)
 #define WDT_TCSR 0xffffbc
 
@@ -32,8 +30,17 @@ u8 irq_off(void);               /* rt.s: mask interrupts, return the old CCR */
 void irq_restore(u8 ccr);
 void run_on_stack(void (*fn)(void), void *top);
 
-/* CyOS gives an application only a small stack; the game runs on its own */
-static u32 game_stack[2048];
+/* The game runs with its screen buffer (fb, see link.ld) and its stack in
+ * the on-chip RAM from IRAM_START to IRAM_END. CyOS's data there is kept in
+ * iram_save meanwhile, and the data transfer controller, which works from
+ * tables in that RAM, is switched off (DTCER) until the game is done. */
+#define IRAM_START 0xffdc00UL
+#define IRAM_END 0xfffc00UL
+#define DTCER 0xffff30UL
+static u8 iram_save[IRAM_END - IRAM_START];
+static u8 dtcer_save[6];
+extern u8 _iram_stack_top[], _iram_code[], _iram_code_end[];
+#define IRAM_CODE 0xfffa00UL
 
 void hw_idle(void)
 {
@@ -42,13 +49,23 @@ void hw_idle(void)
 
 void hw_init(void)
 {
+    u8 i;
     saved_ccr = irq_off();
+    for (i = 0; i < 6; i++) {
+        dtcer_save[i] = REG8(DTCER + i);
+        REG8(DTCER + i) = 0;
+    }
+    mcpy(iram_save, (void *)IRAM_START, sizeof iram_save);
+    mcpy((void *)IRAM_CODE, _iram_code, (u32)(_iram_code_end - _iram_code));
     hw_idle();
     clock_last = TCNT5;
 }
 
 void hw_shutdown(void)
 {
+    u8 i;
+    mcpy((void *)IRAM_START, iram_save, sizeof iram_save);
+    for (i = 0; i < 6; i++) REG8(DTCER + i) = dtcer_save[i];
     hw_idle();
     irq_restore(saved_ccr);
 }
@@ -103,22 +120,7 @@ u8 hw_weapon_key(void)
     return 0;
 }
 
-/* the top rows of fb to the screen */
-void hw_present_rows(s16 rows)
-{
-    const u8 *p = fb;
-    s16 y;
-    for (y = SCREENH - 1; y >= SCREENH - rows; y--) {
-        s16 n = ROWBYTES;
-        LCD_INDEX = 2;
-        LCD_DATA = 0;
-        LCD_INDEX = 3;
-        LCD_DATA = (u8)y;
-        LCD_INDEX = 4;
-        while (n--) LCD_DATA = *p++;
-    }
-    hw_idle();
-}
+/* hw_present_rows is in rt.s */
 
 void hw_present(void)
 {
@@ -147,7 +149,7 @@ long main(int argc, char **argv, char start)
     if (!start) return 0;
     pack = levelpack;
     hw_init();
-    run_on_stack(doom_main, game_stack + sizeof game_stack / sizeof game_stack[0]);
+    run_on_stack(doom_main, _iram_stack_top);
     hw_shutdown();
     return 0;
 }

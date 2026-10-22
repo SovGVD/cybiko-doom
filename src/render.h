@@ -12,6 +12,15 @@
 /* the screen: 100 rows of 40 bytes, four 2-bit pixels a byte, leftmost in
  * the top bits, 0 white .. 3 black; row 0 is the top */
 extern u8 fb[SCREENH * ROWBYTES];
+extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
+
+/* data the renderer uses most goes into the H8S's fast on-chip RAM
+ * (cybiko/link.ld); it is set up at run time, never initialised */
+#ifdef __H8300S__
+#define IRAM __attribute__((section(".iram")))
+#else
+#define IRAM
+#endif
 
 /* shades 0 (white) .. 6 (black): odd ones are 2x2 checkerboards */
 #define SHADES 7

@@ -23,7 +23,9 @@
 #include "game.h"
 #include "level.h"
 
-u8 fb[SCREENH * ROWBYTES];
+#ifndef __H8300S__
+u8 fb[SCREENH * ROWBYTES];      /* on the Cybiko it is in on-chip RAM (link.ld) */
+#endif
 
 #define NEARZ 8                 /* Q1: 4 map units */
 #define MAXCOORD 23000          /* Q1 deltas past this are not drawn */
@@ -34,12 +36,13 @@ static s16 viewz;               /* units */
 static s16 vcos, vsin;          /* Q14 */
 
 /* column clips: rows still open are ceilclip+1 .. floorclip-1 */
-static s8 ceilclip[VIEWW], floorclip[VIEWW];
+static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 
 /* shades */
-u8 pat[SHADES][2];            /* also used by cybiko/rt.s */
-static u8 shadelut[256];        /* brightness -> shade */
-static u8 dimtab[64];           /* distance dimming by scale >> 4, of 256 */
+u8 show_weapon = 1;
+u8 pat[SHADES][2] IRAM;       /* also used by cybiko/rt.s */
+static u8 shadelut[256] IRAM;   /* brightness -> shade */
+static u8 dimtab[64] IRAM;      /* distance dimming by scale >> 4, of 256 */
 
 /* ---- vertex transform cache ---- */
 #define MAXVERTS 2048
@@ -118,7 +121,7 @@ static s16 project_x(s16 x, s16 z)
 /* ---- solid ranges (Doom's solidsegs) ---- */
 typedef struct { s16 first, last; } cliprange_t;
 #define MAXSEGS 48
-static cliprange_t solidsegs[MAXSEGS], *newend;
+static cliprange_t solidsegs[MAXSEGS] IRAM, *newend;
 
 static void clear_clips(void)
 {
@@ -546,8 +549,8 @@ s16 cr_lo, cr_hi;                       /* rows that may be drawn */
 u8 *cr_col;                             /* the column's byte in row 0 of fb */
 u8 cr_keep;                             /* the bits of that byte not ours */
 u8 cr_ebase;                            /* 64 x the outline bits that apply */
-u8 cr_tab[256];                         /* cr_ebase + (cell & 63) -> shade */
-s16 rowtab[34];                         /* screen row where cell row r starts */
+u8 cr_tab[256] IRAM;                    /* cr_ebase + (cell & 63) -> shade */
+s16 rowtab[34] IRAM;                    /* screen row where cell row r starts */
 static s16 tab_light = -1;              /* the light cr_tab is made for */
 
 void cell_run(const u8 *c, s16 r, s16 e);
@@ -814,5 +817,5 @@ void render_view(void)
     if (lvl.nvertexes > MAXVERTS) return;
     render_node((u16)(lvl.nnodes - 1));
     for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
-    draw_weapon();
+    if (show_weapon) draw_weapon();
 }

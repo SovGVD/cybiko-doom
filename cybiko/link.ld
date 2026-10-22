@@ -6,6 +6,16 @@
  * words the loader must relocate. */
 OUTPUT_FORMAT("coff-h8300")
 OUTPUT_ARCH(h8300s)
+/* The H8S's 8 KB of on-chip RAM is much faster than the DRAM (one state an
+ * access against three), so the game puts its screen buffer and its stack
+ * there while it runs; hw_cybiko.c keeps CyOS's contents meanwhile. */
+_fb = 0xffdc00;                 /* 4000 bytes */
+__iram_stack_top = 0xfffa00;    /* the stack grows down to the .iram data */
+/* rt.s's fill routines run from 0xfffa00 (hw_cybiko.c copies them there) */
+_cell_run = 0xfffa00 + (_cell_run_img - __iram_code);
+_vline = 0xfffa00 + (_vline_img - __iram_code);
+_hw_present_rows = 0xfffa00 + (_hw_present_rows_img - __iram_code);
+
 SECTIONS
 {
     .text : {
@@ -22,6 +32,10 @@ SECTIONS
     .bss : {
         __bss_start = .;
         __bss_end = .;
+    }
+    .iram 0xffeba0 (NOLOAD) : {
+        *(.iram)
+        __iram_end = .;
     }
     /DISCARD/ : { *(.comment) *(.stab) *(.stabstr) }
 }

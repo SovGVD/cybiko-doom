@@ -20,8 +20,9 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
 teleports, secrets and exits, and the five skill levels. In the emulator
-E1M1 runs at 10-28 frames a second, and about 9 with three monsters in its
-widest view.
+E1M1 runs at 15-35 frames a second (35 is the game's tic rate), and at about
+14 with three monsters in its widest view. Hiding the weapon in the title
+menu makes it a little faster.
 
 ## Building
 
@@ -83,7 +84,10 @@ sprites from a Doom IWAD you supply into the app:
 
 - The game turns interrupts off while it runs and so has the whole CPU;
   it resets the watchdog itself and gives CyOS its interrupts back on exit.
-- It runs on its own 8 KB stack, since CyOS gives an application a small one.
+- The H8S's 8 KB of on-chip RAM takes one state an access against the
+  DRAM's three, so while the game runs it holds the screen buffer, the stack,
+  the renderer's hot tables and its fill loops (`cybiko/link.ld`); CyOS's
+  contents are kept aside and put back on exit, and the DTC is off meanwhile.
 - CyOS loads only a small zeroed data area, so the game's tables are stored
   as zeros in the module (the `.app` compression removes them).
 - The CyOS decompressor has an 8 KB window: `cybiko_cap.py` makes no back
