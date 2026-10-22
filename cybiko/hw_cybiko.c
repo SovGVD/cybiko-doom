@@ -1,0 +1,153 @@
+/* The Cybiko Xtreme side: CyOS starts main() like any application; the game
+ * then takes the machine over until it quits. With interrupts off CyOS
+ * stops (no task switches, no screen updates of its own) and all of the
+ * 18 MHz H8S is the game's. The hardware is used directly:
+ *
+ *   screen    HD66421 at 100000 (index) / 100001 (data); display RAM row 0
+ *             is the bottom line
+ *   keys      matrix at e00000: a 16-bit read at e00000 + 2 * sel gives the
+ *             rows whose bit in sel is 0, a pressed key reads 0
+ *   clock     TPU channel 5, which CyOS runs free at clock / 256 (72 kHz)
+ *   watchdog  CyOS enables it; with its interrupts off we must reset it
+ *
+ * See docs/cybiko-internals.md in the Dragonfruit emulator for the details. */
+#include "../src/hw.h"
+#include "../src/render.h"
+
+#define REG8(a) (*(volatile u8 *)(a))
+#define REG16(a) (*(volatile u16 *)(a))
+
+#define LCD_INDEX REG8(0x100000)
+#define LCD_DATA REG8(0x100001)
+#define TCNT5 REG16(0xfffea6)
+#define WDT_TCSR 0xffffbc
+
+const u32 HW_HZ = 72000;
+static u8 saved_ccr;
+static u32 clock_hi;
+static u16 clock_last;
+
+void doom_main(void);
+u8 irq_off(void);               /* rt.s: mask interrupts, return the old CCR */
+void irq_restore(u8 ccr);
+void run_on_stack(void (*fn)(void), void *top);
+
+/* CyOS gives an application only a small stack; the game runs on its own */
+static u32 game_stack[2048];
+
+void hw_idle(void)
+{
+    REG16(WDT_TCSR) = 0x5a00;       /* watchdog counter back to 0 */
+}
+
+void hw_init(void)
+{
+    saved_ccr = irq_off();
+    hw_idle();
+    clock_last = TCNT5;
+}
+
+void hw_shutdown(void)
+{
+    hw_idle();
+    irq_restore(saved_ccr);
+}
+
+u32 hw_clock(void)
+{
+    u16 now = TCNT5;
+    clock_hi += (u16)(now - clock_last);
+    clock_last = now;
+    hw_idle();
+    return clock_hi;
+}
+
+static u16 row(u8 r)
+{
+    return (u16)~REG16(0xe00000UL + 2 * (0x3ff & ~(1u << r)));
+}
+
+/* key map: matrix row, bit, game key */
+static const struct { u8 row, bit; u16 key; } keymap[] = {
+    {6, 11, K_UP}, {3, 6, K_UP},                /* Up, W */
+    {6, 13, K_DOWN}, {3, 5, K_DOWN},            /* Down, S */
+    {6, 14, K_LEFT}, {6, 12, K_RIGHT},
+    {4, 6, K_FIRE}, {0, 11, K_FIRE},            /* Space, K */
+    {4, 3, K_USE}, {3, 7, K_USE},               /* Enter, E */
+    {5, 10, K_ESC},
+    {8, 15, K_RUN},                             /* Shift */
+    {7, 15, K_STRAFE},                          /* Fn */
+    {3, 2, K_STRAFEL}, {0, 10, K_STRAFEL},      /* A , */
+    {2, 8, K_STRAFER}, {9, 1, K_STRAFER},       /* D . */
+    {4, 5, K_MAP}, {0, 8, K_MAP},               /* Menu, M */
+    {5, 7, K_NEXTW},                            /* Tab */
+    {9, 0, K_FPS},                              /* Help */
+    {4, 4, K_TOGGLERUN},                        /* Select */
+};
+
+u16 hw_keys(void)
+{
+    u16 rows[10], k = 0;
+    u8 i;
+    for (i = 0; i < 10; i++) rows[i] = row(i);
+    for (i = 0; i < sizeof keymap / sizeof keymap[0]; i++)
+        if (rows[keymap[i].row] & (1u << keymap[i].bit)) k |= keymap[i].key;
+    return k;
+}
+
+u8 hw_weapon_key(void)
+{
+    u8 r;
+    for (r = 0; r < 7; r++)
+        if (row((u8)(6 - r)) & 1) return (u8)(r + 1);           /* F1 is in row 6 */
+    return 0;
+}
+
+/* the top rows of fb to the screen */
+void hw_present_rows(s16 rows)
+{
+    const u8 *p = fb;
+    s16 y;
+    for (y = SCREENH - 1; y >= SCREENH - rows; y--) {
+        s16 n = ROWBYTES;
+        LCD_INDEX = 2;
+        LCD_DATA = 0;
+        LCD_INDEX = 3;
+        LCD_DATA = (u8)y;
+        LCD_INDEX = 4;
+        while (n--) LCD_DATA = *p++;
+    }
+    hw_idle();
+}
+
+void hw_present(void)
+{
+    hw_present_rows(SCREENH);
+}
+
+/* text on the serial console (SCI1), where the emulator prints it */
+void hw_debug(const char *s)
+{
+    while (*s) {
+        u16 t = 2000;
+        while (!(REG8(0xffff84) & 0x80) && --t) ;
+        if (!t) return;
+        REG8(0xffff83) = (u8)*s++;
+        REG8(0xffff84) &= 0x7f;
+    }
+}
+
+extern const u8 levelpack[];
+extern const u8 *pack;
+
+long main(int argc, char **argv, char start)
+{
+    (void)argc;
+    (void)argv;
+    if (!start) return 0;
+    pack = levelpack;
+    hw_init();
+    run_on_stack(doom_main, game_stack + sizeof game_stack / sizeof game_stack[0]);
+    hw_shutdown();
+    return 0;
+}

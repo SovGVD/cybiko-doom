@@ -1,0 +1,12 @@
+Doom
+
+Up/Down or W/S: walk
+Left/Right: turn
+Fn + Left/Right, A/D or , and . : strafe
+Shift: run (Select: always run)
+Space or K: fire
+Enter or E: open doors, press switches
+F1-F7: weapons, Tab: next weapon
+Menu or M: map
+Help: frames per second on/off
+Esc: pause, Esc again to quit

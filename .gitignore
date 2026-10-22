@@ -1,0 +1,4 @@
+build/
+pc/doom_pc
+*.pgm
+__pycache__/
