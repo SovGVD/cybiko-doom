@@ -112,7 +112,7 @@ const char *level_name(int i);
 int level_find(const char *name);       /* -1 if not in the pack */
 int level_load(int i);                  /* 0 on failure */
 
-/* the sprite silhouette for a class and frame (see wad2cy.py), or NULL */
+/* the shrunk sprite for a class and frame (see wad2cy.py), or NULL */
 const u8 *sprite_get(int cls, int frame);
 
 subsector_t *point_in_subsector(s32 x, s32 y);     /* 16.16 */

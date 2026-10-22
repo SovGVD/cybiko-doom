@@ -12,8 +12,8 @@ the game needs from it:
     BSP nodes, things, the blockmap and the reject table;
   * one grey tone for every wall texture and floor/ceiling flat, the
     average brightness of its pixels, since the Cybiko draws flat walls;
-  * small 1-bit silhouettes of the monster, item and weapon sprites, which
-    the game draws as outlines ("wireframe billboards").
+  * the monster, item and weapon sprites shrunk to at most 32x32 cells of
+    16 grey tones, with their outline marked.
 
 The pack is big-endian (as the H8S is) and starts with a directory, see
 PACK FORMAT below and src/level.h, which must agree with it.
@@ -302,14 +302,19 @@ CLASS_ORDER = [
 FRAMES_PER_CLASS = 5        # sprite slots per class; unused ones are empty
 
 # ---------------------------------------------------------------------------
-# Sprite silhouettes
+# Sprites
 #
-# A silhouette is the sprite's opaque pixels shrunk by a whole factor f so it
-# is at most 32 cells tall, stored as runs per column. Format (bytes):
+# A sprite is shrunk by a whole factor f so it is at most 32 cells tall and
+# wide, and stored as runs of opaque cells per column. Format (bytes):
 #   u8 width (cells), u8 height (cells), u8 f (map units per cell),
 #   s8 left offset (cells), s8 top offset (cells), u8 0
-#   then per column: u8 run count, then (u8 start, u8 end) per run,
-#   end exclusive.
+#   then per column: u8 run count, then per run u8 start, u8 end (end
+#   exclusive) and one byte per cell of the run:
+#     bits 0-3  tone, 0 black .. 15 white
+#     bit 4     outline on the left (no opaque cell to the left)
+#     bit 5     outline on the right
+# The tones are stretched to the sprite's own range of brightness, so a dark
+# monster still shows its shape on the 4-grey screen.
 
 def sprite_lump(wad, name):
     """A sprite frame by name; frames that share a lump with a mirrored
@@ -324,29 +329,51 @@ def sprite_lump(wad, name):
     return None
 
 
-def silhouette(wad, name):
+def shrink_sprite(wad, name, lum):
     data = sprite_lump(wad, name)
     if data is None:
         return None
     w, h, lo, to, cols = picture_pixels(data)
     f = max(1, -(-h // 32), -(-w // 32))
     cw, ch = -(-w // f), -(-h // f)
-    grid = [[0] * ch for _ in range(cw)]
+    count = [[0] * ch for _ in range(cw)]
+    total = [[0.0] * ch for _ in range(cw)]
     for x, col in enumerate(cols):
-        for y, _ in col:
+        for y, c in col:
             if 0 <= y < h:
-                grid[x // f][y // f] += 1
-    # a cell is solid when at least a third of its pixels are
+                count[x // f][y // f] += 1
+                total[x // f][y // f] += lum[c]
+    # a cell is opaque when at least a third of its pixels are
     need = max(1, (f * f) // 3)
+    solid = [[count[x][y] >= need for y in range(ch)] for x in range(cw)]
+    vals = sorted(total[x][y] / count[x][y] for x in range(cw) for y in range(ch) if solid[x][y])
+    if vals:
+        lo_v = vals[len(vals) // 20]
+        hi_v = vals[-1 - len(vals) // 20]
+    else:
+        lo_v, hi_v = 0, 255
+    if hi_v - lo_v < 96:                    # do not blow up flat sprites
+        mid = (hi_v + lo_v) / 2
+        lo_v, hi_v = mid - 48, mid + 48
+
+    def cell(x, y):
+        t = (total[x][y] / count[x][y] - lo_v) * 15 / (hi_v - lo_v)
+        b = max(0, min(15, int(round(t))))
+        if x == 0 or not solid[x - 1][y]:
+            b |= 0x10
+        if x == cw - 1 or not solid[x + 1][y]:
+            b |= 0x20
+        return b
+
     out = bytearray([cw, ch, f, max(-128, min(127, round(lo / f))) & 0xff,
                      max(-128, min(127, round(to / f))) & 0xff, 0])
     for x in range(cw):
         runs = []
         y = 0
         while y < ch:
-            if grid[x][y] >= need:
+            if solid[x][y]:
                 s = y
-                while y < ch and grid[x][y] >= need:
+                while y < ch and solid[x][y]:
                     y += 1
                 runs.append((s, y))
             else:
@@ -354,7 +381,7 @@ def silhouette(wad, name):
         runs = runs[:8]
         out.append(len(runs))
         for s, e in runs:
-            out += bytes([s, e])
+            out += bytes([s, e]) + bytes(cell(x, y) for y in range(s, e))
     return bytes(out)
 
 
@@ -513,7 +540,7 @@ def main():
     for cls in CLASS_ORDER:
         for k in range(FRAMES_PER_CLASS):
             names = frames.get(cls, [])
-            s = silhouette(wad, names[k]) if k < len(names) else None
+            s = shrink_sprite(wad, names[k], lum) if k < len(names) else None
             if k < len(names) and s is None:
                 missing.append(names[k])
             sil.append(s or b"")
@@ -540,7 +567,7 @@ def main():
     # PACK FORMAT: "CYDM", u16 version, u16 map count, u16 sprite slots,
     # u16 0, u32 offset of each map, u32 offset of each sprite (0 = none),
     # then the data. Offsets are from the pack start.
-    head = bytearray(b"CYDM" + struct.pack(">HHHH", 1, len(blobs), len(sil), 0))
+    head = bytearray(b"CYDM" + struct.pack(">HHHH", 2, len(blobs), len(sil), 0))
     table_size = len(head) + 4 * (len(blobs) + len(sil))
     body = bytearray()
     offs = []

@@ -13,11 +13,12 @@
  * (Q4); screen y is in 16.16; "scale" is 160 * 1024 / z (pixels per unit
  * Q10, times two).
  *
- * Things are drawn as outlines of their sprite silhouettes. They are
+ * Things are their sprites shrunk to cells of 16 tones (wad2cy.py), drawn
+ * in shades with a black outline. They are
  * collected while the BSP is walked front to back: when a subsector is
  * reached, the open window of each screen column (between the nearer
  * ceilings and floors already drawn) is exactly what hides the thing, so it
- * is copied then, and the outlines are drawn last, far ones first. */
+ * is copied then, and the sprites are drawn last, far ones first. */
 #include "render.h"
 #include "game.h"
 #include "level.h"
@@ -36,7 +37,7 @@ static s16 vcos, vsin;          /* Q14 */
 static s8 ceilclip[VIEWW], floorclip[VIEWW];
 
 /* shades */
-static u8 pat[SHADES][2];
+u8 pat[SHADES][2];            /* also used by cybiko/rt.s */
 static u8 shadelut[256];        /* brightness -> shade */
 static u8 dimtab[64];           /* distance dimming by scale >> 4, of 256 */
 
@@ -171,7 +172,10 @@ static u8 flat_shade(u8 tone, u8 light)
 }
 
 /* ---- column filling ---- */
-static void vline(s16 x, s16 y1, s16 y2, u8 shade)
+void vline(s16 x, s16 y1, s16 y2, u8 shade);
+
+#ifndef __H8300S__
+void vline(s16 x, s16 y1, s16 y2, u8 shade)
 {
     u8 *p, keep, a, b;
     s16 n;
@@ -189,6 +193,7 @@ static void vline(s16 x, s16 y1, s16 y2, u8 shade)
     }
     if (n) p[0] = (p[0] & keep) | a;
 }
+#endif
 
 static void dot(s16 x, s16 y, u8 shade)
 {
@@ -435,10 +440,11 @@ static void add_seg(const seg_t *seg)
 
 typedef struct {
     s16 x1, x2;                 /* columns */
-    s32 xfrac, xstep;           /* silhouette cell, 16.16, at x1 and per column */
+    s32 xfrac, xstep;           /* sprite cell column, 16.16, at x1 and per column */
     s32 ytop, ystep;            /* screen row of the top, 16.16; rows per cell */
     const u8 *sil;
     u16 clip;                   /* offset in the clip pool */
+    u8 light;                   /* of the thing's sector */
     u8 shadow;
 } vissprite_t;
 
@@ -449,8 +455,9 @@ static s16 nvis;
 static s8 poolc[POOL], poolf[POOL];
 static u16 poolused;
 
-static const u8 box_sil[] = { 4, 8, 4, 2, 8, 0,
-    1, 0, 8, 1, 0, 8, 1, 0, 8, 1, 0, 8 };
+/* a grey box for things whose sprite is not in the WAD */
+static const u8 box_sil[] = { 1, 4, 8, 0, 4, 0,
+    1, 0, 4, 0x38, 0x38, 0x38, 0x38 };
 
 static void add_sprite(mobj_t *mo, const u8 *sil)
 {
@@ -501,6 +508,7 @@ static void add_sprite(mobj_t *mo, const u8 *sil)
     v->sil = sil;
     v->clip = poolused;
     v->shadow = (mo->flags & MF_SHADOW) != 0;
+    v->light = lvl.sectors[mo->ss->sector].light;
     mcpy(poolc + poolused, ceilclip + x1, (u32)n);
     mcpy(poolf + poolused, floorclip + x1, (u32)n);
     poolused += n;
@@ -514,70 +522,136 @@ static const u8 *sprite_frame(mobj_t *mo)
     return s;
 }
 
-/* the runs of silhouette column cx: pointer to the count byte */
-static const u8 *sil_column(const u8 *sil, s16 cx)
+/* the next column of a sprite: skip the runs of this one */
+static const u8 *next_column(const u8 *p)
 {
-    const u8 *p = sil + 6;
-    while (cx-- > 0) p += 1 + 2 * p[0];
+    s16 n = *p++;
+    while (n--) {
+        p += 2 + p[1] - p[0];
+    }
     return p;
 }
 
-static void span(s16 x, s16 y1, s16 y2, s16 lo, s16 hi, u8 shade)
+/* sprite tone (0 black .. 15 white) to a shade, in a sector of this light */
+static u8 sprite_shade(u8 tone, u8 light)
 {
-    if (y1 > y2) { s16 t = y1; y1 = y2; y2 = t; }
-    if (y1 < lo) y1 = lo;
-    if (y2 > hi) y2 = hi;
-    vline(x, y1, y2, shade);
+    s16 sh = 4 - (s16)((tone * 5) >> 4);   /* 4 .. 0: black is for the outline */
+    if (light < 128) sh++;
+    return (u8)(sh > 4 ? 4 : sh);
+}
+
+/* State for cell_run, which draws one run of sprite cells in a column; it
+ * is written in assembler for the H8S (cybiko/rt.s) and uses these. */
+s16 cr_lo, cr_hi;                       /* rows that may be drawn */
+u8 *cr_col;                             /* the column's byte in row 0 of fb */
+u8 cr_keep;                             /* the bits of that byte not ours */
+u8 cr_ebase;                            /* 64 x the outline bits that apply */
+u8 cr_tab[256];                         /* cr_ebase + (cell & 63) -> shade */
+s16 rowtab[34];                         /* screen row where cell row r starts */
+static s16 tab_light = -1;              /* the light cr_tab is made for */
+
+void cell_run(const u8 *c, s16 r, s16 e);
+
+#ifndef __H8300S__
+/* cells c of cell rows r..e-1; cells of one shade next to each other
+ * become one vline */
+void cell_run(const u8 *c, s16 r, s16 e)
+{
+    const s16 *rt = rowtab + r;
+    s16 sa = 0, sb = -1, n = e - r, x = (s16)((cr_col - fb) * 2 + (cr_keep == 0xf0));
+    u8 ssh = 0;
+    for (; n; n--, c++, rt++) {
+        s16 ya = rt[0], yb = rt[1] - 1;
+        u8 sh;
+        if (yb < cr_lo) continue;
+        if (ya > cr_hi) break;
+        if (yb < ya) continue;
+        if (ya < cr_lo) ya = cr_lo;
+        if (yb > cr_hi) yb = cr_hi;
+        sh = cr_tab[cr_ebase + (*c & 63)];
+        if (sh == ssh && ya == sb + 1) {
+            sb = yb;
+            continue;
+        }
+        if (sb >= sa) vline(x, sa, sb, ssh);
+        sa = ya;
+        sb = yb;
+        ssh = sh;
+    }
+    if (sb >= sa) vline(x, sa, sb, ssh);
+}
+#endif
+
+/* Draw sprite cells over columns x1..x2: column x shows cell column
+ * (xfrac + (x - x1) * xstep) >> 16, cell row r starts at screen row
+ * (ytop + r * ystep) >> 16. Rows outside top[]..bot[] (per column, or
+ * the whole view without them) are not drawn. */
+static void draw_cells(const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 ytop, s32 ystep,
+                       const s8 *top, const s8 *bot, u8 light, u8 shadow)
+{
+    s16 x, cw = spr[0], ch = spr[1], colx = 0;
+    const u8 *col = spr + 6;
+    s32 xf = xfrac, yy = ytop;
+    if (light != tab_light) {
+        u8 lut[16];
+        tab_light = light;
+        for (x = 0; x < 16; x++) lut[x] = sprite_shade((u8)x, light);
+        for (x = 0; x < 256; x++) cr_tab[x] = (x & (x >> 2) & 0x30) ? EDGE : lut[x & 15];
+    }
+    if (ch > 32) ch = 32;
+    for (x = 0; x <= ch; x++, yy += ystep) {
+        s32 y = yy >> 16;
+        rowtab[x] = (s16)(y < -1 ? -1 : y > VIEWH ? VIEWH : y);
+    }
+    for (x = x1; x <= x2; x++, xf += xstep) {
+        s16 cx = (s16)(xf >> 16), n;
+        const u8 *p;
+        if (cx >= cw) cx = cw - 1;
+        while (colx < cx) {
+            col = next_column(col);
+            colx++;
+        }
+        if (x < 0 || x >= VIEWW) continue;
+        cr_ebase = 0;
+        if (x == x1 || (s16)((xf - xstep) >> 16) != cx) cr_ebase |= 0x40;
+        if (x == x2 || (s16)((xf + xstep) >> 16) != cx) cr_ebase |= 0x80;
+        cr_lo = 0;
+        cr_hi = VIEWH - 1;
+        if (top) {
+            cr_lo = top[x - x1] + 1;
+            cr_hi = bot[x - x1] - 1;
+            if (cr_lo < 0) cr_lo = 0;
+            if (cr_hi > VIEWH - 1) cr_hi = VIEWH - 1;
+            if (cr_lo > cr_hi) continue;
+        }
+        cr_col = fb + (x >> 1);
+        cr_keep = (x & 1) ? 0xf0 : 0x0f;
+        p = col;
+        n = *p++;
+        while (n--) {
+            s16 r = p[0], e = p[1], y, rtop, rbot;
+            const u8 *c = p + 2;
+            p = c + (e - r);
+            if (e > ch) e = ch;
+            if (r >= e) continue;
+            rtop = rowtab[r];
+            rbot = rowtab[e] - 1;
+            if (shadow) {
+                for (y = rtop & ~1; y <= rbot; y += 2)
+                    if (y >= cr_lo && y <= cr_hi) dot(x, y, EDGE);
+                continue;
+            }
+            cell_run(c, r, e);
+            if (rtop >= cr_lo && rtop <= cr_hi) dot(x, rtop, EDGE);
+            if (rbot >= cr_lo && rbot <= cr_hi) dot(x, rbot, EDGE);
+        }
+    }
 }
 
 static void draw_sprite(vissprite_t *v)
 {
-    s16 x, cw = v->sil[0];
-    s32 xf = v->xfrac;
-    s16 ptop[8], pbot[8], pn = 0, lastcx = -1;
-    const u8 *col = NULL;
-    for (x = v->x1; x <= v->x2; x++, xf += v->xstep) {
-        s16 cx = (s16)(xf >> 16), lo, hi, k, n;
-        s16 tops[8], bots[8];
-        if (cx >= cw) cx = cw - 1;
-        if (cx != lastcx) {
-            col = sil_column(v->sil, cx);
-            lastcx = cx;
-        }
-        lo = poolc[v->clip + x - v->x1] + 1;
-        hi = poolf[v->clip + x - v->x1] - 1;
-        if (lo < 0) lo = 0;
-        if (hi > VIEWH - 1) hi = VIEWH - 1;
-        n = col[0];
-        for (k = 0; k < n; k++) {
-            tops[k] = (s16)((v->ytop + v->ystep * col[1 + 2 * k]) >> 16);
-            bots[k] = (s16)((v->ytop + v->ystep * col[2 + 2 * k]) >> 16) - 1;
-            if (bots[k] < tops[k]) bots[k] = tops[k];
-        }
-        if (lo <= hi) {
-            for (k = 0; k < n; k++) {
-                u8 whole = x == v->x1 || x == v->x2 || k >= pn;
-                if (v->shadow) {
-                    s16 y;
-                    for (y = tops[k] & ~1; y <= bots[k]; y += 2)
-                        if (y >= lo && y <= hi) dot(x, y, EDGE);
-                    continue;
-                }
-                if (whole) {
-                    span(x, tops[k], bots[k], lo, hi, EDGE);
-                } else {
-                    span(x, ptop[k], tops[k], lo, hi, EDGE);
-                    span(x, pbot[k], bots[k], lo, hi, EDGE);
-                }
-            }
-            /* a run that ends here: close it on the previous column's side */
-        }
-        for (k = 0; k < n; k++) {
-            ptop[k] = tops[k];
-            pbot[k] = bots[k];
-        }
-        pn = n;
-    }
+    draw_cells(v->sil, v->x1, v->x2, v->xfrac, v->xstep, v->ytop, v->ystep,
+               poolc + v->clip, poolf + v->clip, v->light, v->shadow);
 }
 
 /* ---- BSP ---- */
@@ -674,7 +748,6 @@ static void draw_weapon(void)
                                 C_W_LAUNCHER, C_W_PLASMA, C_W_BFG, C_W_CHAINSAW };
     const u8 *sil = sprite_get(wcls[player.weapon & 7], player.weaponframe);
     s16 cw, ch, f, x, y0, bobx, boby;
-    const u8 *col;
     if (!sil) sil = sprite_get(wcls[player.weapon & 7], 0);
     if (!sil || player.dead) return;
     cw = sil[0];
@@ -684,40 +757,14 @@ static void draw_weapon(void)
      * here a cell is f/2 columns... keep it simple: centre it at the bottom */
     bobx = (s16)(MUL16(fsin(gametic * 512), (s16)(player.bob >> 12)) >> 18);
     boby = (s16)((MUL16(fcos(gametic * 1024), (s16)(player.bob >> 12)) >> 18) & 7);
+    /* a cell is f/2 screen pixels: f/4 columns and f/2 rows */
     x = VIEWW / 2 - (cw * f) / 8 + bobx;
     y0 = VIEWH - (ch * f) / 2 + 2 + boby;
-    col = sil + 6;
     {
-        s16 cx, k, px;
-        s16 ptop[8], pbot[8], pn = 0;
-        for (cx = 0; cx < cw; cx++) {
-            s16 n = col[0];
-            s16 ncols = (s16)(((cx + 1) * f) / 4 - (cx * f) / 4);
-            for (px = 0; px < ncols; px++) {
-                s16 sx = x + (cx * f) / 4 + px;
-                if (sx < 0 || sx >= VIEWW) continue;
-                for (k = 0; k < n; k++) {
-                    s16 t = y0 + (col[1 + 2 * k] * f) / 2, b = y0 + (col[2 + 2 * k] * f) / 2 - 1;
-                    if (b > VIEWH - 1) b = VIEWH - 1;
-                    if (t > b) continue;
-                    vline(sx, t, b, 2);
-                    if (cx == 0 || cx == cw - 1 || k >= pn) {
-                        dot(sx, t, EDGE);
-                    } else {
-                        span(sx, ptop[k], t, 0, VIEWH - 1, EDGE);
-                        if (pbot[k] < VIEWH) span(sx, pbot[k], b, 0, VIEWH - 1, EDGE);
-                    }
-                    if (b < VIEWH - 1) dot(sx, b, EDGE);
-                }
-            }
-            for (k = 0; k < n; k++) {
-                ptop[k] = y0 + (col[1 + 2 * k] * f) / 2;
-                pbot[k] = y0 + (col[2 + 2 * k] * f) / 2 - 1;
-                if (pbot[k] > VIEWH - 1) pbot[k] = VIEWH;
-            }
-            pn = n;
-            col += 1 + 2 * n;
-        }
+        s16 ncols = (s16)((cw * f) / 4);
+        if (ncols < 1) ncols = 1;
+        draw_cells(sil, x, x + ncols - 1, 0, ((s32)cw << 16) / ncols, (s32)y0 << 16,
+                   (s32)f << 15, NULL, NULL, lvl.sectors[player.mo->ss->sector].light, 0);
     }
 }
 

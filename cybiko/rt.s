@@ -176,4 +176,144 @@ _mcpy:
         bne     1b
         pop.l   er4
 2:      rts
+
+; void cell_run(const u8 *c, s16 r, s16 e): one run of sprite cells in a
+; column (see render.c, which has the same in C for the PC). Cells c are
+; for cell rows r..e-1; rowtab[] gives their screen rows, cr_tab[] their
+; shades; cells of one shade next to each other are filled as one span.
+;   er1 rowtab pointer, er2 cell pointer, e3 cells left,
+;   r3h cr_ebase, r3l shade of the open span, r4 its top, e4 its bottom,
+;   r5 cr_lo, e5 cr_hi, er6 cr_tab index, r0 / e0 this cell's top / bottom
+        .global _cell_run
+_cell_run:
+        stm.l   er4-er6,@-er7
+        mov.w   r2,r3
+        sub.w   r1,r3
+        mov.w   r3,e3
+        mov.l   er0,er2
+        exts.l  er1
+        shll.l  er1
+        add.l   #_rowtab,er1
+        mov.w   @_cr_lo:32,r5
+        mov.w   @_cr_hi:32,e5
+        mov.b   @_cr_ebase:32,r3h
+        sub.b   r3l,r3l
+        sub.w   r4,r4
+        mov.w   #-1,e4
+        sub.l   er6,er6
+        mov.w   e3,e3
+        beq     .Ldone
+.Lcell:
+        mov.w   @er1,r0
+        mov.w   @(2,er1),e0
+        dec.w   #1,e0
+        cmp.w   r5,e0
+        blt     .Lnext
+        cmp.w   e5,r0
+        bgt     .Ldone
+        cmp.w   r0,e0
+        blt     .Lnext
+        cmp.w   r5,r0
+        bge     1f
+        mov.w   r5,r0
+1:      cmp.w   e5,e0
+        ble     2f
+        mov.w   e5,e0
+2:      mov.b   @er2,r6l
+        and.b   #63,r6l
+        or.b    r3h,r6l
+        mov.b   @(_cr_tab:32,er6),r6l
+        cmp.b   r3l,r6l
+        bne     .Lnew
+        mov.w   e4,e6
+        inc.w   #1,e6
+        cmp.w   e6,r0
+        bne     .Lnew
+        sub.w   e6,e6
+        mov.w   e0,e4
+        bra     .Lnext
+.Lnew:  sub.w   e6,e6
+        cmp.w   r4,e4
+        blt     3f
+        jsr     @_cr_fill
+3:      mov.w   r0,r4
+        mov.w   e0,e4
+        mov.b   r6l,r3l
+.Lnext: adds    #1,er2
+        adds    #2,er1
+        dec.w   #1,e3
+        bne     .Lcell
+.Ldone: cmp.w   r4,e4
+        blt     4f
+        jsr     @_cr_fill
+4:      ldm.l   @er7+,er4-er6
+        rts
+
+; void vline(s16 x, s16 y1, s16 y2, u8 shade): fill column x (of 80) from
+; row y1 to y2 (0 <= y1) with a dithered shade (render.c has it in C too)
+        .global _vline
+_vline:
+        cmp.w   r1,r2
+        blt     9f
+        push.l  er4
+        mov.w   r1,r4
+        mov.w   r2,e4
+        mov.b   @(11,er7),r3l
+        mov.w   r0,r1
+        shar.w  r1
+        exts.l  er1
+        add.l   #_fb,er1
+        mov.l   er1,@_cr_col:32
+        mov.b   #0x0f,r2l
+        btst    #0,r0l
+        beq     1f
+        mov.b   #0xf0,r2l
+1:      mov.b   r2l,@_cr_keep:32
+        jsr     @_cr_fill
+        pop.l   er4
+9:      rts
+
+; fill rows r4..e4 of the column at cr_col with shade r3l; keeps er0-er6
+_cr_fill:
+        stm.l   er0-er3,@-er7
+        mov.w   r4,r0
+        extu.l  er0
+        mov.w   #40,r1
+        mulxu.w r1,er0
+        mov.l   @_cr_col:32,er1
+        add.l   er1,er0
+        sub.l   er2,er2
+        mov.b   r3l,r2l
+        shll.b  r2l
+        add.l   #_pat,er2
+        mov.b   @er2,r1l
+        mov.b   @(1,er2),r1h
+        btst    #0,r4l
+        beq     1f
+        mov.b   r1l,r2l
+        mov.b   r1h,r1l
+        mov.b   r2l,r1h
+1:      mov.b   @_cr_keep:32,r2h
+        mov.b   r2h,r2l
+        not.b   r2l
+        and.b   r2l,r1l
+        and.b   r2l,r1h
+        mov.w   e4,r3
+        sub.w   r4,r3
+        inc.w   #1,r3
+2:      mov.b   @er0,r2l
+        and.b   r2h,r2l
+        or.b    r1l,r2l
+        mov.b   r2l,@er0
+        dec.w   #1,r3
+        beq     3f
+        mov.b   @(40,er0),r2l
+        and.b   r2h,r2l
+        or.b    r1h,r2l
+        mov.b   r2l,@(40,er0)
+        add.l   #80,er0
+        dec.w   #1,r3
+        bne     2b
+3:      ldm.l   @er7+,er0-er3
+        rts
         .end

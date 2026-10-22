@@ -5,14 +5,17 @@
  *
  * The script has lines "FIRST LAST KEYS": frames FIRST..LAST hold KEYS, a
  * list of letters: u d l r (arrows) f (fire) e (use) x (esc) s (run)
- * a (strafe left) b (strafe right) m (map) t (next weapon) 1-7 (weapons).
- * Each frame is one game tic (1/35 s). */
+ * a (strafe left) b (strafe right) m (map) t (next weapon) 1-7 (weapons),
+ * and last zN, which at frame FIRST puts a still thing of class N (game.h)
+ * in front of the player, to look at sprites. Each frame is one game tic (1/35 s). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
 #include "../src/hw.h"
 #include "../src/render.h"
+#include "../src/game.h"
+#include "../src/spec.h"
 
 extern const u8 *pack;
 void doom_main(void);
@@ -21,17 +24,34 @@ const u32 HW_HZ = 35;
 static u32 frame, maxframes = 200, every = 10;
 static const char *shotdir = NULL;
 static jmp_buf done;
-static struct { u32 a, b; u16 keys; u8 w; } script[256];
+static struct { u32 a, b; u16 keys; u8 w; int spawn; } script[256];
 static int nscript;
 
 u32 hw_clock(void) { return frame; }
+
+/* "zN": put a thing of class N 160 units in front of the player */
+static void spawn_ahead(int cls)
+{
+    static int count;
+    mobj_t *pm = player.mo, *mo;
+    s32 side = (s32)(count++ % 3 - 1) * 56;     /* left, middle, right */
+    if (!pm) return;
+    mo = spawn_mobj(pm->x + (160 * (s32)fcos(pm->angle) + side * fsin(pm->angle)) * 4,
+                    pm->y + (160 * (s32)fsin(pm->angle) - side * fcos(pm->angle)) * 4, ONFLOORZ, cls);
+    if (mo) {
+        mo->angle = pm->angle + 0x8000;
+        mo->state = S_STILL;
+    }
+}
 
 u16 hw_keys(void)
 {
     u16 k = 0;
     int i;
-    for (i = 0; i < nscript; i++)
+    for (i = 0; i < nscript; i++) {
         if (frame >= script[i].a && frame <= script[i].b) k |= script[i].keys;
+        if (frame == script[i].a && script[i].spawn) spawn_ahead(script[i].spawn);
+    }
     return k;
 }
 
@@ -112,6 +132,7 @@ int main(int argc, char **argv)
                 u16 k = 0;
                 u8 w = 0;
                 keys[0] = 0;
+                script[nscript].spawn = 0;
                 if (sscanf(line, "%u %u %63s", &a, &b, keys) < 2) continue;
                 for (p = keys; *p; p++)
                     switch (*p) {
@@ -127,6 +148,7 @@ int main(int argc, char **argv)
                     case 'b': k |= K_STRAFER; break;
                     case 'm': k |= K_MAP; break;
                     case 't': k |= K_NEXTW; break;
+                    case 'z': script[nscript].spawn = atoi(p + 1); p += strlen(p) - 1; break;
                     default:
                         if (*p >= '1' && *p <= '7') w = (u8)(*p - '0');
                     }
