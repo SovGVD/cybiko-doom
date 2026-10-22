@@ -78,13 +78,13 @@ static int render_hud(void)
     hud_valid = 1;
     fill_rect(0, y, SCREENW, SCREENH - y, 2);
     fill_rect(0, y, SCREENW, 1, 6);
-    if (now[1] >= 0) num3(0, y + 2, now[1]);
+    if (now[1] >= 0) num3(0, y + 1, now[1]);
     draw_text(2, y + 11, wname[player.weapon], 6);
-    num3(44, y + 2, player.health);
-    draw_text(76, y + 2, "%", 6);
+    num3(44, y + 1, player.health);
+    draw_text(76, y + 1, "%", 6);
     draw_text(48, y + 11, "HEALTH", 6);
-    num3(90, y + 2, player.armor);
-    draw_text(122, y + 2, "%", 6);
+    num3(90, y + 1, player.armor);
+    draw_text(122, y + 1, "%", 6);
     draw_text(94, y + 11, "ARMOR", 6);
     /* keys */
     {
