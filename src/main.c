@@ -168,20 +168,24 @@ static int title(int *map)
         draw_text(10, 60, sel == 3 ? ">" : " ", 6);
         draw_text(18, 60, "WEAPON", 6);
         draw_text(70, 60, show_weapon ? "SHOWN" : "HIDDEN (FASTER)", 6);
-        center_text(78, "ENTER: PLAY   ESC: QUIT", 4);
-        center_text(88, "HELP KEY: FPS ON/OFF", 4);
+        draw_text(10, 68, sel == 4 ? ">" : " ", 6);
+        draw_text(18, 68, "WALLS", 6);
+        draw_text(70, 68, show_textures ? "TEXTURED" : "FLAT (FASTER)", 6);
+        center_text(80, "ENTER: PLAY   ESC: QUIT", 4);
+        center_text(89, "HELP KEY: FPS ON/OFF", 4);
         hw_present();
         k = wait_key();
         if (k & K_ESC) return 0;
         if (k & (K_USE | K_FIRE)) return 1;
-        if (k & K_UP) sel = sel ? sel - 1 : 3;
-        if (k & K_DOWN) sel = sel < 3 ? sel + 1 : 0;
+        if (k & K_UP) sel = sel ? sel - 1 : 4;
+        if (k & K_DOWN) sel = sel < 4 ? sel + 1 : 0;
         if (k & (K_LEFT | K_RIGHT)) {
             int d = (k & K_LEFT) ? -1 : 1;
             if (sel == 0) *map = (*map + d + level_count()) % level_count();
             if (sel == 1) skill = (u8)((skill + d + 5) % 5);
             if (sel == 2) always_run ^= 1;
             if (sel == 3) show_weapon ^= 1;
+            if (sel == 4) show_textures ^= 1;
         }
         if (k & K_FPS) show_fps ^= 1;
     }

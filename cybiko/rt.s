@@ -301,6 +301,68 @@ _vline_img:
         pop.l   er4
 9:      rts
 
+; void tline(s16 x, s16 y1, s16 y2): a textured column (render.c has it in
+; C too): rows y1..y2 of column x (of 80) from the texels at tl_col, texel
+; (tl_v >> 8) & tl_hmask, tl_v += tl_step a row; tex_lut[row & 1][texel] is
+; the dither byte.
+;   er2 texels, er3 tex_lut, r1h row parity (0 / 16), er4 screen byte,
+;   r5h kept bits, r5l ours, e5 rows left, r6 v, e6 step, r1l hmask
+        .global _tline_img
+_tline_img:
+        cmp.w   r1,r2
+        bge     0f
+        rts
+0:      stm.l   er4-er6,@-er7
+        sub.w   r1,r2
+        inc.w   #1,r2
+        mov.w   r2,e5
+        mov.w   r1,r3
+        extu.l  er3
+        mov.w   #40,r4
+        mulxu.w r4,er3
+        mov.w   r0,r4
+        shar.w  r4
+        exts.l  er4
+        add.l   er3,er4
+        add.l   #_fb,er4
+        mov.b   #0x0f,r5h
+        btst    #0,r0l
+        beq     1f
+        mov.b   #0xf0,r5h
+1:      mov.b   r5h,r5l
+        not.b   r5l
+        mov.l   #_tex_lut,er3
+        sub.b   r1h,r1h
+        btst    #0,r1l
+        beq     2f
+        mov.b   #16,r1h
+2:      mov.w   @_tl_v:32,r6
+        mov.w   @_tl_step:32,e6
+        mov.l   @_tl_col:32,er2
+        mov.b   @_tl_hmask:32,r1l
+3:      sub.l   er0,er0
+        mov.b   r6h,r0l
+        and.b   r1l,r0l
+        add.l   er2,er0
+        mov.b   @er0,r0l
+        or.b    r1h,r0l
+        extu.w  r0
+        extu.l  er0
+        add.l   er3,er0
+        mov.b   @er0,r0l
+        and.b   r5l,r0l
+        mov.b   @er4,r0h
+        and.b   r5h,r0h
+        or.b    r0h,r0l
+        mov.b   r0l,@er4
+        add.l   #40,er4
+        xor.b   #16,r1h
+        add.w   e6,r6
+        dec.w   #1,e5
+        bne     3b
+        ldm.l   @er7+,er4-er6
+        rts
+
 ; fill rows r4..e4 of the column at cr_col with shade r3l; keeps er0-er6
 _cr_fill:
         stm.l   er0-er3,@-er7

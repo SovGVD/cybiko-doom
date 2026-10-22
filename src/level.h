@@ -28,8 +28,18 @@ typedef struct sector_s {
 
 typedef struct {
     u8 top, bottom, mid;        /* texture tones, 0 = no texture */
+    u8 ttop, tbottom, tmid;     /* textures (lvl.tex), NOTEX = none */
+    s16 yoffset;
     s16 sector;
 } side_t;
+
+#define NOTEX 255
+
+/* a wall texture, shrunk to a texel per 4x4 pixels, in 16 tones */
+typedef struct {
+    const u8 *texels;           /* column by column */
+    u8 wbits, hbits;            /* log2 of the texel counts */
+} texture_t;
 
 #define ML_BLOCKING 1
 #define ML_BLOCKMONSTERS 2
@@ -64,7 +74,10 @@ typedef struct {
     u8 edge;                    /* 1: starts at the line's start, 2: ends at its end */
     s16 front, back;            /* sectors, back -1 for one-sided */
     u8 top, bottom, mid;        /* tones of this side's textures */
-    u8 pad;
+    u8 ttop, tbottom, tmid;     /* and the textures */
+    s16 u;                      /* texture column (units) at v1 */
+    s16 length;                 /* units */
+    s16 yoffset;                /* the side's */
 } seg_t;
 
 typedef struct {
@@ -102,6 +115,8 @@ typedef struct {
     struct mobj_s **blocklinks; /* mobjs per cell */
     const u8 *reject;
     s16 nreject;
+    texture_t *tex;
+    s16 ntex;
 } level_t;
 
 extern level_t lvl;

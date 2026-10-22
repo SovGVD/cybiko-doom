@@ -8,9 +8,11 @@ hardware (LCD controller, key matrix, timer) directly.
 
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
-- walls, floors and ceilings are flat dithered shades (taken from each
-  texture's average brightness, the sector light and the distance) with black
-  edges instead of textures;
+- walls have their textures shrunk to a quarter (one texel for 4x4
+  pixels) in 16 tones, dithered to the 4 greys; floors and ceilings are flat
+  dithered shades (from each flat's average brightness, the sector light and
+  the distance); edges are drawn black. Flat walls are a title menu choice
+  and run faster;
 - monsters, items, decorations and the weapon are their sprites shrunk to
   at most 32x32 cells in 16 tones, drawn in the 4 greys with a black
   outline;
@@ -20,9 +22,9 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
 teleports, secrets and exits, and the five skill levels. In the emulator
-E1M1 runs at 15-35 frames a second (35 is the game's tic rate), and at about
-14 with three monsters in its widest view. Hiding the weapon in the title
-menu makes it a little faster.
+E1M1 runs at 12-31 frames a second with textured walls and 15-35 with flat
+ones (35 is the game's tic rate), and at 10-14 in its widest view with
+monsters. Hiding the weapon in the title menu makes it a little faster.
 
 ## Building
 
@@ -38,17 +40,18 @@ This makes two files:
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
-- `build/doom.dat`, the level pack: the maps and the shrunk sprites. The
+- `build/doom.dat`, the level pack: the maps with their shrunk wall
+  textures, and the shrunk sprites. The
   game looks for it on the MP3 cartridge's card first (`/MP3/doom.dat`, the
   card's top folder; on Dragonfruit that is `/Cybiko/card/doom.dat` on the
   SD card) and then in the Cybiko's own storage (next to the app). The
-  shareware episode makes a 600 KB pack, which wants the card; the Cybiko's
-  own storage holds only a few maps (35-100 KB each), so pick them with the
+  shareware episode makes a 940 KB pack, which wants the card; the Cybiko's
+  own storage holds only a few maps (60-150 KB each), so pick them with the
   second argument there.
 
 The game reads the pack's sprites when it starts and each map when it is
 played. It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
-room for the biggest map in the pack (up to 100 KB in the shareware
+room for the biggest map in the pack (up to 150 KB in the shareware
 episode).
 
 ## The WAD and its licence

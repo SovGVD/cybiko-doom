@@ -1,7 +1,7 @@
 /* PC test harness: runs the game without a screen. Input comes from a
  * script, and the screen is saved as PGM pictures.
  *
- *   doom_pc doom.dat [--script FILE] [--frames N] [--shots DIR] [--every K]
+ *   doom_pc doom.dat [--script FILE] [--frames N] [--shots DIR] [--every K] [--flat]
  *
  * The script has lines "FIRST LAST KEYS": frames FIRST..LAST hold KEYS, a
  * list of letters: u d l r (arrows) f (fire) e (use) x (esc) s (run)
@@ -122,6 +122,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) maxframes = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--every") && i + 1 < argc) every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--shots") && i + 1 < argc) shotdir = argv[++i];
+        else if (!strcmp(argv[i], "--flat")) show_textures = 0;
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             FILE *s = fopen(argv[++i], "r");
             char line[256], keys[64];

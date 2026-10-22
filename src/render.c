@@ -1,11 +1,12 @@
 /* The 3D view: Doom's BSP renderer cut down for a 160x100, four-grey screen.
  *
- * Walls, floors and ceilings are flat shades instead of textures: each wall
- * texture and flat has one grey tone (its average brightness, worked out by
- * tools/wad2cy.py), dimmed by the sector's light and the distance, and drawn
- * with 2x2 dithering for seven shades. Edges of walls, steps and openings
- * are drawn black so the shapes read well. Columns are two pixels wide
- * (Doom's "low detail"), 80 across.
+ * Floors and ceilings are flat shades: each flat has one grey tone (its
+ * average brightness, worked out by tools/wad2cy.py), dimmed by the
+ * sector's light and the distance, and drawn with 2x2 dithering for seven
+ * shades. Walls are textured, with the textures shrunk to a texel per 4x4
+ * pixels in 16 tones (or, chosen in the title menu, flat shades like the
+ * floors). Edges of walls, steps and openings are drawn black so the shapes
+ * read well. Columns are two pixels wide (Doom's "low detail"), 80 across.
  *
  * Coordinates: map units; the view transform works in half units (Q1) so
  * that it stays in 16 x 16 bit multiplies, which the H8S does in one
@@ -40,6 +41,7 @@ static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 
 /* shades */
 u8 show_weapon = 1;
+u8 show_textures = 1;
 u8 pat[SHADES][2] IRAM;       /* also used by cybiko/rt.s */
 static u8 shadelut[256] IRAM;   /* brightness -> shade */
 static u8 dimtab[64] IRAM;      /* distance dimming by scale >> 4, of 256 */
@@ -85,7 +87,7 @@ static s16 clip_t(s32 d1, s32 d2)
 
 /* clip (x1,z1)-(x2,z2) to z >= NEARZ, -z <= x <= z; 0 if nothing is left.
  * *c1 / *c2 are set when an end was cut. */
-static int clip_seg(s16 *x1, s16 *z1, s16 *x2, s16 *z2, u8 *c1, u8 *c2)
+static int clip_seg(s16 *x1, s16 *z1, s16 *x2, s16 *z2, s16 *u1, s16 *u2, u8 *c1, u8 *c2)
 {
     int pass;
     for (pass = 0; pass < 3; pass++) {
@@ -100,10 +102,12 @@ static int clip_seg(s16 *x1, s16 *z1, s16 *x2, s16 *z2, u8 *c1, u8 *c2)
         if (d1 < 0) {
             *x1 = (s16)(*x1 + (MUL16(*x2 - *x1, t) >> 14));
             *z1 = (s16)(*z1 + (MUL16(*z2 - *z1, t) >> 14));
+            *u1 = (s16)(*u1 + (MUL16(*u2 - *u1, t) >> 14));
             *c1 = 1;
         } else {
             *x2 = (s16)(*x1 + (MUL16(*x2 - *x1, t) >> 14));
             *z2 = (s16)(*z1 + (MUL16(*z2 - *z1, t) >> 14));
+            *u2 = (s16)(*u1 + (MUL16(*u2 - *u1, t) >> 14));
             *c2 = 1;
         }
         if (*z1 < NEARZ) *z1 = NEARZ;
@@ -148,6 +152,11 @@ static struct {
     s32 sc, scstep;             /* scale << 16 */
     u8 bwall, btop, bbot;       /* brightness of the pieces */
     u8 ceilshade, floorshade;
+    /* textures */
+    s32 us, usstep;             /* texture column (units) times scale */
+    s16 vmid, vtop, vbot;       /* height of the textures' top row above the eye */
+    const texture_t *tmid, *ttop, *tbot;        /* NULL: flat shade */
+    u8 light;
 } w;
 
 static s32 yproj(s16 dh, s16 scale)
@@ -207,10 +216,60 @@ static void dot(s16 x, s16 y, u8 shade)
 
 #define EDGE 6
 
+/* ---- textured columns ----
+ * A texel has 16 tones; tex_lut has the dither pattern of each tone's shade
+ * for even and odd rows, for the current light (rebuilt when it changes).
+ * tline draws rows y1..y2 of column x from a texture column tl_col: texel
+ * (tl_v >> 8) & tl_hmask at row y1, then tl_v += tl_step a row (8.8 fixed
+ * point; the texture heights divide 256). cybiko/rt.s has it in assembler. */
+u8 tex_lut[2][16] IRAM;
+static u8 lut_light = 255;
+const u8 *tl_col;
+u16 tl_v, tl_step;
+u8 tl_hmask;
+void tline(s16 x, s16 y1, s16 y2);
+
+#ifndef __H8300S__
+void tline(s16 x, s16 y1, s16 y2)
+{
+    u8 *p = fb + y1 * ROWBYTES + (x >> 1);
+    u8 keep = (x & 1) ? 0xf0 : 0x0f, odd = y1 & 1;
+    u16 v = tl_v;
+    for (; y1 <= y2; y1++, p += ROWBYTES, v += tl_step) {
+        *p = (*p & keep) | (tex_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & (u8)~keep);
+        odd ^= 1;
+    }
+}
+#endif
+
+static void set_tex_light(u8 l)
+{
+    u8 t;
+    if (l == lut_light) return;
+    lut_light = l;
+    for (t = 0; t < 16; t++) {
+        u8 sh = shadelut[(u8)(((u16)t * 17 * l) >> 8)];
+        tex_lut[0][t] = pat[sh][0];
+        tex_lut[1][t] = pat[sh][1];
+    }
+}
+
+/* rows y1..y2 of a wall piece: texture t, top row at height vtop above the
+ * eye; u is the texture column in units, vstep texels per row (16.16) */
+static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u, s32 vstep)
+{
+    tl_col = t->texels + ((((u >> 2) & ((1 << t->wbits) - 1))) << t->hbits);
+    tl_hmask = (u8)((1 << t->hbits) - 1);
+    tl_step = (u16)(vstep >> 8);
+    tl_v = (u16)((((s32)vtop << 14) + (y1 - CENTERY) * vstep - (vstep >> 1)) >> 8);
+    tline(x, y1, y2);
+}
+
 static void render_columns(s16 x, s16 stop)
 {
-    s32 top, bot, high = 0, low = 0, sc;
+    s32 top, bot, high = 0, low = 0, sc, us;
     s16 d = x - w.c0;
+    u8 textured = w.tmid || w.ttop || w.tbot;
 
     /* values at the first column drawn */
     top = w.top + w.topstep * d;
@@ -218,14 +277,24 @@ static void render_columns(s16 x, s16 stop)
     if (w.drawtop) high = w.high + w.highstep * d;
     if (w.drawbottom) low = w.low + w.lowstep * d;
     sc = w.sc + w.scstep * d;
+    us = w.us + w.usstep * d;
 
     for (; x <= stop; x++) {
+        s32 u = 0, vstep = 0;
         s16 ctop = ceilclip[x] + 1, cbot = floorclip[x] - 1;
         s16 yl = (s16)(top >> 16), yh = (s16)(bot >> 16);
         s16 s = (s16)(sc >> 20);           /* scale / 16 */
         u8 dim = dimtab[s > 63 ? 63 : (s < 0 ? 0 : s)];
         u8 vedge = (x == w.c0 && w.edge1) || (x == w.c1 && w.edge2);
         u8 topedge = yl >= ctop, botedge = yh <= cbot;
+        if (textured && !vedge) {
+            s16 scl = (s16)(sc >> 16);
+            if (scl < 1) scl = 1;
+            u = ldiv32_16(us, scl);
+            vstep = ldiv32_16(0x1000000L, scl);
+            if (vstep > 0xffffffL) vstep = 0xffffffL;
+            set_tex_light((u8)((w.light * dim) >> 8));
+        }
 
         if (yl < ctop) yl = ctop;
         if (yh > cbot) yh = cbot;
@@ -241,7 +310,8 @@ static void render_columns(s16 x, s16 stop)
         }
         if (w.solid) {
             if (yl <= yh) {
-                vline(x, yl, yh, vedge ? EDGE : shadelut[(w.bwall * dim) >> 8]);
+                if (w.tmid && !vedge) tex_piece(x, yl, yh, w.tmid, w.vmid, u, vstep);
+                else vline(x, yl, yh, vedge ? EDGE : shadelut[(w.bwall * dim) >> 8]);
                 if (topedge) dot(x, yl, EDGE);
                 if (botedge && yh > yl) dot(x, yh, EDGE);
             }
@@ -253,7 +323,8 @@ static void render_columns(s16 x, s16 stop)
                 high += w.highstep;
                 if (mid >= cbot + 1) mid = cbot;
                 if (mid >= yl) {
-                    vline(x, yl, mid, vedge ? EDGE : shadelut[(w.btop * dim) >> 8]);
+                    if (w.ttop && !vedge) tex_piece(x, yl, mid, w.ttop, w.vtop, u, vstep);
+                    else vline(x, yl, mid, vedge ? EDGE : shadelut[(w.btop * dim) >> 8]);
                     if (topedge) dot(x, yl, EDGE);
                     dot(x, mid, EDGE);
                     ceilclip[x] = (s8)mid;
@@ -266,7 +337,8 @@ static void render_columns(s16 x, s16 stop)
                 low += w.lowstep;
                 if (mid <= ceilclip[x]) mid = ceilclip[x] + 1;
                 if (mid <= yh) {
-                    vline(x, mid, yh, vedge ? EDGE : shadelut[(w.bbot * dim) >> 8]);
+                    if (w.tbot && !vedge) tex_piece(x, mid, yh, w.tbot, w.vbot, u, vstep);
+                    else vline(x, mid, yh, vedge ? EDGE : shadelut[(w.bbot * dim) >> 8]);
                     dot(x, mid, EDGE);
                     if (botedge && yh > mid) dot(x, yh, EDGE);
                     floorclip[x] = (s8)mid;
@@ -278,6 +350,7 @@ static void render_columns(s16 x, s16 stop)
         top += w.topstep;
         bot += w.botstep;
         sc += w.scstep;
+        us += w.usstep;
     }
 }
 
@@ -353,7 +426,7 @@ static u8 bright(u8 tone, u8 light)
 
 static void add_seg(const seg_t *seg)
 {
-    s16 x1, z1, x2, z2, c0, c1;
+    s16 x1, z1, x2, z2, c0, c1, u1, u2;
     u8 cut1 = 0, cut2 = 0;
     sector_t *front = &lvl.sectors[seg->front], *back;
     int solid;
@@ -365,7 +438,9 @@ static void add_seg(const seg_t *seg)
     z1 = tvz[seg->v1];
     x2 = tvx[seg->v2];
     z2 = tvz[seg->v2];
-    if (!clip_seg(&x1, &z1, &x2, &z2, &cut1, &cut2)) return;
+    u1 = seg->u;
+    u2 = seg->u + seg->length;
+    if (!clip_seg(&x1, &z1, &x2, &z2, &u1, &u2, &cut1, &cut2)) return;
     w.sx1 = project_x(x1, z1);
     w.sx2 = project_x(x2, z2);
     c0 = (w.sx1 + 31) >> 5;
@@ -403,6 +478,27 @@ static void add_seg(const seg_t *seg)
         w.floorshade = flat_shade(front->liquid ? front->floortone >> 1 : front->floortone,
                                   front->light);
         w.bwall = bright(seg->mid, front->light);
+        w.light = front->light;
+        w.tmid = w.ttop = w.tbot = NULL;
+        if (show_textures) {
+            u16 fl = lvl.lines[seg->line].flags;
+            interp(MUL16(u1, s1), MUL16(u2, s2), &w.us, &w.usstep, c0);
+            if (!back && seg->tmid < lvl.ntex) {
+                w.tmid = &lvl.tex[seg->tmid];
+                w.vmid = (fl & ML_DONTPEGBOTTOM) ? front->floorh + (4 << w.tmid->hbits) - viewz : wt;
+                w.vmid += seg->yoffset;
+            }
+            if (back && seg->ttop < lvl.ntex) {
+                w.ttop = &lvl.tex[seg->ttop];
+                w.vtop = (fl & ML_DONTPEGTOP) ? wt : back->ceilh + (4 << w.ttop->hbits) - viewz;
+                w.vtop += seg->yoffset;
+            }
+            if (back && seg->tbottom < lvl.ntex) {
+                w.tbot = &lvl.tex[seg->tbottom];
+                w.vbot = (fl & ML_DONTPEGBOTTOM) ? wt : back->floorh - viewz;
+                w.vbot += seg->yoffset;
+            }
+        }
         w.markceil = front->ceilh > viewz || !front->ceiltone;
         w.markfloor = front->floorh < viewz;
         w.drawtop = w.drawbottom = 0;
@@ -682,6 +778,7 @@ static int check_bbox(const s16 *bbox)
     s16 bx, by, boxpos, x1, z1, x2, z2, c0, c1;
     s32 dx1, dy1, dx2, dy2;
     u8 cut1 = 0, cut2 = 0;
+    s16 u1 = 0, u2 = 0;
     cliprange_t *start;
     s16 px = (s16)(vx >> 1), py = (s16)(vy >> 1);
 
@@ -705,7 +802,7 @@ static int check_bbox(const s16 *bbox)
     x1 = (s16)((MUL16(dx1, vsin) - MUL16(dy1, vcos)) >> 14);
     z2 = (s16)((MUL16(dx2, vcos) + MUL16(dy2, vsin)) >> 14);
     x2 = (s16)((MUL16(dx2, vsin) - MUL16(dy2, vcos)) >> 14);
-    if (!clip_seg(&x1, &z1, &x2, &z2, &cut1, &cut2)) return 0;
+    if (!clip_seg(&x1, &z1, &x2, &z2, &u1, &u2, &cut1, &cut2)) return 0;
     c0 = (project_x(x1, z1) + 31) >> 5;
     c1 = ((project_x(x2, z2) + 31) >> 5) - 1;
     if (c0 > c1) {

@@ -147,12 +147,16 @@ int level_load(int idx)
     p = part(m, 2, &n);
     lvl.nsides = n;
     lvl.sides = alloc((u32)n * sizeof(side_t));
-    for (i = 0; i < n; i++, p += 6) {
+    for (i = 0; i < n; i++, p += 12) {
         side_t *s = &lvl.sides[i];
         s->top = p[0];
         s->bottom = p[1];
         s->mid = p[2];
-        s->sector = (s16)rd16(p + 4);
+        s->ttop = p[3];
+        s->tbottom = p[4];
+        s->tmid = p[5];
+        s->yoffset = (s16)rd16(p + 8);
+        s->sector = (s16)rd16(p + 10);
     }
 
     p = part(m, 3, &n);
@@ -183,7 +187,7 @@ int level_load(int idx)
     p = part(m, 4, &n);
     lvl.nsegs = n;
     lvl.segs = alloc((u32)n * sizeof(seg_t));
-    for (i = 0; i < n; i++, p += 8) {
+    for (i = 0; i < n; i++, p += 12) {
         seg_t *s = &lvl.segs[i];
         line_t *l;
         side_t *sd;
@@ -192,6 +196,8 @@ int level_load(int idx)
         s->v2 = (s16)rd16(p + 2);
         s->line = (s16)rd16(p + 4);
         fl = rd16(p + 6);
+        s->u = (s16)rd16(p + 8);
+        s->length = (s16)rd16(p + 10);
         s->side = fl & 1;
         s->edge = (u8)(fl >> 1 & 3);
         l = &lvl.lines[s->line];
@@ -201,6 +207,10 @@ int level_load(int idx)
         s->top = sd->top;
         s->bottom = sd->bottom;
         s->mid = sd->mid;
+        s->ttop = sd->ttop;
+        s->tbottom = sd->tbottom;
+        s->tmid = sd->tmid;
+        s->yoffset = sd->yoffset;
     }
 
     p = part(m, 5, &n);
@@ -255,6 +265,15 @@ int level_load(int idx)
     p = part(m, 9, &n);
     lvl.reject = p;
     lvl.nreject = n;
+
+    p = part(m, 10, &n);
+    lvl.ntex = n;
+    lvl.tex = alloc((u32)n * sizeof(texture_t));
+    for (i = 0; i < n; i++) {
+        lvl.tex[i].wbits = p[8 * i];
+        lvl.tex[i].hbits = p[8 * i + 1];
+        lvl.tex[i].texels = p + rd32(p + 8 * i + 4);
+    }
 
     /* lines per sector */
     {

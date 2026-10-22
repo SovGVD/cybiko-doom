@@ -60,7 +60,7 @@ static u8 iram_save[IRAM_END - IRAM_START];
 static u8 iram_game[IRAM_END - IRAM_START];  /* the game's, during cyos_call */
 static u8 dtcer_save[6];
 extern u8 _iram_stack_top[], _iram_code[], _iram_code_end[];
-#define IRAM_CODE 0xfffa00UL
+#define IRAM_CODE 0xfff900UL
 
 void hw_idle(void)
 {

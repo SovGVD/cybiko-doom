@@ -13,6 +13,7 @@
  * the top bits, 0 white .. 3 black; row 0 is the top */
 extern u8 fb[SCREENH * ROWBYTES];
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
+extern u8 show_textures;        /* textured walls (the title menu) */
 
 /* data the renderer uses most goes into the H8S's fast on-chip RAM
  * (cybiko/link.ld); it is set up at run time, never initialised */

@@ -8,9 +8,9 @@
 #         (Freedoom's does; the shareware one only allows passing on the
 #         unmodified shareware package).
 #   MAPS  comma-separated maps to put in the pack (default: all of them).
-#         The shareware episode's 9 maps make a 600 KB pack, which fits the
+#         The shareware episode's 9 maps make a 940 KB pack, which fits the
 #         MP3 cartridge's card; the Cybiko's own storage holds only a few
-#         maps (each is 35-100 KB).
+#         maps (each is 60-150 KB).
 #
 # Needs Python 3 and the GNU H8 tools (Debian/Ubuntu: binutils-h8300-hms
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
