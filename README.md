@@ -23,8 +23,8 @@ The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
 teleports, secrets and exits, and the five skill levels. In the emulator
 E1M1 runs at 12-31 frames a second with textured walls and 15-35 with flat
-ones (35 is the game's tic rate), and at 10-14 in its widest view with
-monsters. Hiding the weapon in the title menu makes it a little faster.
+ones (35 is the game's tic rate); its widest view runs at 10-12
+textured and 12-14 flat. Hiding the weapon in the title menu makes it a little faster.
 
 ## Building
 
