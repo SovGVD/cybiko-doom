@@ -8,11 +8,12 @@ hardware (LCD controller, key matrix, timer) directly.
 
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
-- walls have their textures shrunk to a quarter (one texel for 4x4
-  pixels) in 16 tones, dithered to the 4 greys; floors and ceilings are flat
-  dithered shades (from each flat's average brightness, the sector light and
-  the distance); edges are drawn black. Flat walls are a title menu choice
-  and run faster;
+- wall textures are shrunk to at most 16 texels along their longer side
+  (8 or 32 when building, see below), floors and ceilings to 16x16 texels,
+  all in 16 tones dithered to the 4 greys and dimmed with the sector light
+  and the distance; edges are drawn black. The title menu can make walls,
+  floors and ceilings flat dithered shades instead (from each texture's
+  average brightness), which runs faster;
 - monsters, items, decorations and the weapon are their sprites shrunk to
   at most 32x32 cells in 16 tones, drawn in the 4 greys with a black
   outline;
@@ -21,10 +22,18 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
-teleports, secrets and exits, and the five skill levels. In the emulator
-E1M1 runs at 12-31 frames a second with textured walls and 15-35 with flat
-ones (35 is the game's tic rate); its widest view runs at 10-12
-textured and 12-14 flat. Hiding the weapon in the title menu makes it a little faster.
+teleports, secrets and exits, and the five skill levels.
+
+Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
+
+| | start room | widest view (courtyard) | corridors |
+| --- | --- | --- | --- |
+| textured walls and floors | 9-10 | 7 | 22-31 |
+| textured walls, flat floors | 12-13 | 10-11 | 27-33 |
+| flat walls and floors | 15 | 12-14 | 35 |
+
+The texture size changes only the pack's size, not the speed. Hiding the
+weapon in the title menu makes it a little faster.
 
 ## Building
 
@@ -33,10 +42,11 @@ Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
 
     ./build.sh doom1.wad                    # all the WAD's maps
     ./build.sh doom1.wad E1M1,E1M2          # pick the maps
+    TEXELS=8 ./build.sh doom1.wad           # coarser wall textures, smaller pack
 
 This makes two files:
 
-- `build/doom.app`, the game (about 55 KB). Put it on the Cybiko with the
+- `build/doom.app`, the game (about 57 KB). Put it on the Cybiko with the
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
@@ -45,13 +55,14 @@ This makes two files:
   game looks for it on the MP3 cartridge's card first (`/MP3/doom.dat`, the
   card's top folder; on Dragonfruit that is `/Cybiko/card/doom.dat` on the
   SD card) and then in the Cybiko's own storage (next to the app). The
-  shareware episode makes a 940 KB pack, which wants the card; the Cybiko's
-  own storage holds only a few maps (60-150 KB each), so pick them with the
-  second argument there.
+  shareware episode makes an 815 KB pack (735 KB with `TEXELS=8`, 980 KB
+  with `TEXELS=32`), which wants the card; the Cybiko's own storage holds
+  only a few maps (55-135 KB each), so pick them with the second argument
+  there.
 
 The game reads the pack's sprites when it starts and each map when it is
 played. It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
-room for the biggest map in the pack (up to 150 KB in the shareware
+room for the biggest map in the pack (up to 135 KB in the shareware
 episode).
 
 ## The WAD and its licence

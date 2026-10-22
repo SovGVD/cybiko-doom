@@ -122,7 +122,8 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) maxframes = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--every") && i + 1 < argc) every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--shots") && i + 1 < argc) shotdir = argv[++i];
-        else if (!strcmp(argv[i], "--flat")) show_textures = 0;
+        else if (!strcmp(argv[i], "--flat")) show_textures = show_flats = 0;
+        else if (!strcmp(argv[i], "--flatfloors")) show_flats = 0;
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             FILE *s = fopen(argv[++i], "r");
             char line[256], keys[64];

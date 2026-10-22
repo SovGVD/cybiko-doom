@@ -42,6 +42,7 @@ static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 /* shades */
 u8 show_weapon = 1;
 u8 show_textures = 1;
+u8 show_flats = 1;
 u8 pat[SHADES][2] IRAM;       /* also used by cybiko/rt.s */
 static u8 shadelut[256] IRAM;   /* brightness -> shade */
 static u8 dimtab[64] IRAM;      /* distance dimming by scale >> 4, of 256 */
@@ -157,6 +158,7 @@ static struct {
     s16 vmid, vtop, vbot;       /* height of the textures' top row above the eye */
     const texture_t *tmid, *ttop, *tbot;        /* NULL: flat shade */
     u8 light;
+    struct plane_s *floorplane, *ceilplane;     /* NULL: flat shade */
 } w;
 
 static s32 yproj(s16 dh, s16 scale)
@@ -255,14 +257,163 @@ static void set_tex_light(u8 l)
 }
 
 /* rows y1..y2 of a wall piece: texture t, top row at height vtop above the
- * eye; u is the texture column in units, vstep texels per row (16.16) */
+ * eye; u is the texture column in units, vstep units per row (16.16) */
 static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u, s32 vstep)
 {
-    tl_col = t->texels + ((((u >> 2) & ((1 << t->wbits) - 1))) << t->hbits);
+    s32 step = vstep >> t->shift;
+    if (step > 0xffffffL) step = 0xffffffL;
+    tl_col = t->texels + ((((u >> t->shift) & ((1 << t->wbits) - 1))) << t->hbits);
     tl_hmask = (u8)((1 << t->hbits) - 1);
-    tl_step = (u16)(vstep >> 8);
-    tl_v = (u16)((((s32)vtop << 14) + (y1 - CENTERY) * vstep - (vstep >> 1)) >> 8);
+    tl_step = (u16)(step >> 8);
+    tl_v = (u16)(((((s32)vtop << 16) >> t->shift) + (y1 - CENTERY) * step - (step >> 1)) >> 8);
     tline(x, y1, y2);
+}
+
+/* ---- textured floors and ceilings (Doom's visplanes) ----
+ * Walls mark the open rows above and below them in each column, per plane:
+ * a height with a flat and a light. After the walls the planes are drawn
+ * as rows (spans) at one depth each, so the texels step evenly along a
+ * span. */
+typedef struct plane_s {
+    s16 height;
+    u8 flat, light;
+    s16 minx, maxx;
+    u8 top[VIEWW], bottom[VIEWW];       /* rows; top 0xff: column unused */
+} plane_t;
+
+#define MAXPLANES 48
+static plane_t planes[MAXPLANES];
+static s16 nplanes;
+static u8 spanstart[VIEWH];
+/* the dither bytes of a flat texel's 16 tones by light and row parity; at a
+ * 16-byte boundary for the Cybiko's span loop */
+static u8 flat_lut_mem[32 * 2 * 16 + 15];
+static u8 (*flat_lut)[2][16];
+
+static plane_t *find_plane(s16 height, u8 flat, u8 light)
+{
+    plane_t *pl;
+    for (pl = planes; pl < planes + nplanes; pl++)
+        if (pl->height == height && pl->flat == flat && pl->light == light) return pl;
+    if (nplanes >= MAXPLANES) return NULL;
+    pl = &planes[nplanes++];
+    pl->height = height;
+    pl->flat = flat;
+    pl->light = light;
+    pl->minx = VIEWW;
+    pl->maxx = -1;
+    mset(pl->top, 0xff, VIEWW);
+    mset(pl->bottom, 0, VIEWW);
+    return pl;
+}
+
+/* the plane for columns start..stop: pl, or a new one like it if pl has
+ * some of those columns already */
+static plane_t *check_plane(plane_t *pl, s16 start, s16 stop)
+{
+    s16 lo = start > pl->minx ? start : pl->minx, hi = stop < pl->maxx ? stop : pl->maxx, x;
+    plane_t *np;
+    for (x = lo; x <= hi; x++)
+        if (pl->top[x] != 0xff) break;
+    if (x > hi) {
+        if (start < pl->minx) pl->minx = start;
+        if (stop > pl->maxx) pl->maxx = stop;
+        return pl;
+    }
+    if (nplanes >= MAXPLANES) return NULL;
+    np = &planes[nplanes++];
+    np->height = pl->height;
+    np->flat = pl->flat;
+    np->light = pl->light;
+    np->minx = start;
+    np->maxx = stop;
+    mset(np->top, 0xff, VIEWW);
+    mset(np->bottom, 0, VIEWW);
+    return np;
+}
+
+/* row y, columns x1..x2 of a plane. The flats are 16x16 texels of 4x4
+ * units (level.c), so u and v are 8.8 texels that can wrap at 16 bits. */
+const u8 *sp_flat;
+u16 sp_u, sp_v, sp_du, sp_dv;
+const u8 *sp_lut;
+void span(s16 y, s16 x1, s16 x2);
+
+#ifndef __H8300S__
+void span(s16 y, s16 x1, s16 x2)
+{
+    u8 *p = fb + y * ROWBYTES + (x1 >> 1);
+    u16 u = sp_u, v = sp_v;
+    s16 x;
+    for (x = x1; x <= x2; x++) {
+        u8 t = sp_flat[(v >> 4 & 0xf0) | (u >> 8 & 15)];
+        u8 keep = (x & 1) ? 0xf0 : 0x0f;
+        *p = (*p & keep) | (sp_lut[t] & (u8)~keep);
+        if (x & 1) p++;
+        u += sp_du;
+        v += sp_dv;
+    }
+}
+#endif
+
+static void draw_span(const plane_t *pl, s16 y, s16 x1, s16 x2)
+{
+    s16 dh = pl->height - viewz, r2 = 2 * y + 1 - 2 * CENTERY, z, zq, k, c;
+    s32 n;
+    if (dh < 0) dh = -dh;
+    if (r2 < 0) r2 = -r2;
+    n = MUL16(dh, 160);                         /* the row's depth: n / r2 units */
+    z = n >= MUL16(r2, 8000) ? 8000 : div32_16(n, r2);
+    if (z < 1) z = 1;
+    /* one column is z / 40 units to the right, (sin, -cos); zq = z / 40
+     * in 1/128 units; v runs against the map's y as in Doom */
+    zq = (s16)(MUL16(z, 6554) >> 11);
+    c = 2 * x1 + 1 - SCREENW / 2;               /* half columns from the middle */
+    sp_du = (u16)(MUL16(vsin, zq) >> 15);
+    sp_dv = (u16)(MUL16(vcos, zq) >> 15);
+    sp_u = (u16)((((s32)(vx & 127) << 13) + MUL16(vcos, z)) >> 8)
+         + (u16)c * (u16)(MUL16(vsin, zq) >> 16);
+    sp_v = (u16)(-(((s32)(vy & 127) << 13) + MUL16(vsin, z)) >> 8)
+         + (u16)c * (u16)(MUL16(vcos, zq) >> 16);
+    sp_flat = lvl.flat[pl->flat].texels;
+    k = 5120 / z;
+    {
+        u16 l = (u16)pl->light * dimtab[k > 63 ? 63 : k] >> 8;
+        sp_lut = flat_lut[(l * 3 >> 2) >> 3][y & 1];
+    }
+    span(y, x1, x2);
+}
+
+static void draw_planes(void)
+{
+    plane_t *pl;
+    for (pl = planes; pl < planes + nplanes; pl++) {
+        s16 x, stop = pl->maxx + 1, t1, b1, t2, b2, pt = 0xff, pb = 0;     /* top 0xff: empty */
+        if (pl->minx > pl->maxx) continue;
+        for (x = pl->minx; x <= stop; x++) {
+            t1 = pt;
+            b1 = pb;
+            if (x <= pl->maxx) {
+                t2 = pl->top[x];
+                b2 = pl->bottom[x];
+            } else {
+                t2 = 0xff;
+                b2 = 0;
+            }
+            pt = t2;
+            pb = b2;
+            while (t1 < t2 && t1 <= b1) {
+                draw_span(pl, t1, spanstart[t1], x - 1);
+                t1++;
+            }
+            while (b1 > b2 && b1 >= t1) {
+                draw_span(pl, b1, spanstart[b1], x - 1);
+                b1--;
+            }
+            while (t2 < t1 && t2 <= b2) spanstart[t2++] = (u8)x;
+            while (b2 > b1 && b2 >= t2) spanstart[b2--] = (u8)x;
+        }
+    }
 }
 
 static void render_columns(s16 x, s16 stop)
@@ -270,6 +421,10 @@ static void render_columns(s16 x, s16 stop)
     s32 top, bot, high = 0, low = 0, sc, us;
     s16 d = x - w.c0;
     u8 textured = w.tmid || w.ttop || w.tbot;
+
+    if (x > stop) return;
+    if (w.markfloor && w.floorplane) w.floorplane = check_plane(w.floorplane, x, stop);
+    if (w.markceil && w.ceilplane) w.ceilplane = check_plane(w.ceilplane, x, stop);
 
     /* values at the first column drawn */
     top = w.top + w.topstep * d;
@@ -291,8 +446,7 @@ static void render_columns(s16 x, s16 stop)
             s16 scl = (s16)(sc >> 16);
             if (scl < 1) scl = 1;
             u = ldiv32_16(us, scl);
-            vstep = ldiv32_16(0x1000000L, scl);
-            if (vstep > 0xffffffL) vstep = 0xffffffL;
+            vstep = ldiv32_16(0x4000000L, scl);     /* units per row, 16.16 */
             set_tex_light((u8)((w.light * dim) >> 8));
         }
 
@@ -301,12 +455,20 @@ static void render_columns(s16 x, s16 stop)
         if (w.markceil) {
             s16 e = yl - 1;
             if (e > cbot) e = cbot;
-            vline(x, ctop, e, w.ceilshade);
+            if (!w.ceilplane) vline(x, ctop, e, w.ceilshade);
+            else if (ctop <= e) {
+                w.ceilplane->top[x] = (u8)ctop;
+                w.ceilplane->bottom[x] = (u8)e;
+            }
         }
         if (w.markfloor) {
             s16 b = yh + 1;
             if (b < ctop) b = ctop;
-            vline(x, b, cbot, w.floorshade);
+            if (!w.floorplane) vline(x, b, cbot, w.floorshade);
+            else if (b <= cbot) {
+                w.floorplane->top[x] = (u8)b;
+                w.floorplane->bottom[x] = (u8)cbot;
+            }
         }
         if (w.solid) {
             if (yl <= yh) {
@@ -530,6 +692,14 @@ static void add_seg(const seg_t *seg)
             if (front->ceilh <= viewz && front->ceiltone) w.markceil = 0;
             if (front->floorh >= viewz) w.markfloor = 0;
         }
+    }
+    w.floorplane = w.ceilplane = NULL;
+    if (show_flats) {
+        if (w.markfloor && front->floorflat < lvl.nflat)
+            w.floorplane = find_plane(front->floorh, front->floorflat,
+                                      front->liquid ? front->light >> 1 : front->light);
+        if (w.markceil && front->ceilflat < lvl.nflat && front->ceiltone)
+            w.ceilplane = find_plane(front->ceilh, front->ceilflat, front->light);
     }
     if (solid) clip_solid(c0, c1);
     else clip_pass(c0, c1);
@@ -888,6 +1058,13 @@ void render_init(void)
         s16 d = 112 + i * 8;
         dimtab[i] = (u8)(d > 255 ? 255 : d);
     }
+    flat_lut = (u8 (*)[2][16])(flat_lut_mem + ((u8)(0 - (unsigned long)flat_lut_mem) & 15));
+    for (s = 0; s < 32; s++)
+        for (i = 0; i < 16; i++) {
+            u8 sh = shadelut[(u8)((i * 17 * (s * 8 + 4)) >> 8)];
+            flat_lut[s][0][i] = pat[sh][0];
+            flat_lut[s][1][i] = pat[sh][1];
+        }
 }
 
 void render_view(void)
@@ -909,10 +1086,12 @@ void render_view(void)
         floorclip[i] = VIEWH;
     }
     clear_clips();
+    nplanes = 0;
     nvis = 0;
     poolused = 0;
     if (lvl.nvertexes > MAXVERTS) return;
     render_node((u16)(lvl.nnodes - 1));
+    draw_planes();
     for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
     if (show_weapon) draw_weapon();
 }

@@ -363,6 +363,120 @@ _tline_img:
         ldm.l   @er7+,er4-er6
         rts
 
+; void span(s16 y, s16 x1, s16 x2): columns x1..x2 of row y of a floor or
+; ceiling (render.c has it in C too). The flat is 16x16 texels at a
+; 256-byte boundary (sp_flat), so a texel is the address's low byte; the
+; dither bytes of its 16 tones are at a 16-byte boundary (sp_lut). u and v
+; are 8.8 texels, v kept 16 times larger so its top byte is the row's
+; offset.
+;   r0l a texel's dither byte (the fetch is written out four times),
+;   er2 flat, er3 lut, er4 screen byte, r5 u, e5 du, r6 v, e6 dv,
+;   r1h byte pairs left, r1l columns
+        .global _span_img
+_span_img:
+        cmp.w   r1,r2
+        bge     0f
+        rts
+0:      stm.l   er4-er6,@-er7
+        sub.w   r1,r2
+        inc.w   #1,r2
+        mov.w   r0,r3
+        extu.l  er3
+        mov.w   #40,r4
+        mulxu.w r4,er3
+        mov.w   r1,r4
+        shar.w  r4
+        exts.l  er4
+        add.l   er3,er4
+        add.l   #_fb,er4
+        mov.b   r1l,r0l                 ; x1
+        mov.b   r2l,r1l                 ; columns
+        mov.w   @_sp_u:32,r5
+        mov.w   @_sp_du:32,e5
+        mov.w   @_sp_v:32,r6
+        shll.w  #2,r6
+        shll.w  #2,r6
+        mov.w   @_sp_dv:32,r2
+        shll.w  #2,r2
+        shll.w  #2,r2
+        mov.w   r2,e6
+        mov.l   @_sp_flat:32,er2
+        mov.l   @_sp_lut:32,er3
+        btst    #0,r0l
+        beq     1f
+        mov.b   r6h,r2l
+        and.b   #0xf0,r2l
+        mov.b   r5h,r0l
+        and.b   #0x0f,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0l
+        or.b    r0l,r3l
+        mov.b   @er3,r0l
+        and.b   #0xf0,r3l
+        add.w   e5,r5
+        add.w   e6,r6
+        and.b   #0x0f,r0l               ; odd x1: the low half of a byte
+        mov.b   @er4,r0h
+        and.b   #0xf0,r0h
+        or.b    r0h,r0l
+        mov.b   r0l,@er4
+        adds    #1,er4
+        dec.b   r1l
+1:      mov.b   r1l,r1h
+        shlr.b  r1h
+        beq     3f
+2:
+        mov.b   r6h,r2l
+        and.b   #0xf0,r2l
+        mov.b   r5h,r0l
+        and.b   #0x0f,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0l
+        or.b    r0l,r3l
+        mov.b   @er3,r0l
+        and.b   #0xf0,r3l
+        add.w   e5,r5
+        add.w   e6,r6
+        and.b   #0xf0,r0l               ; two columns a byte
+        mov.b   r0l,r0h
+        mov.b   r6h,r2l
+        and.b   #0xf0,r2l
+        mov.b   r5h,r0l
+        and.b   #0x0f,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0l
+        or.b    r0l,r3l
+        mov.b   @er3,r0l
+        and.b   #0xf0,r3l
+        add.w   e5,r5
+        add.w   e6,r6
+        and.b   #0x0f,r0l
+        or.b    r0h,r0l
+        mov.b   r0l,@er4
+        adds    #1,er4
+        dec.b   r1h
+        bne     2b
+3:      btst    #0,r1l
+        beq     4f
+        mov.b   r6h,r2l
+        and.b   #0xf0,r2l
+        mov.b   r5h,r0l
+        and.b   #0x0f,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0l
+        or.b    r0l,r3l
+        mov.b   @er3,r0l
+        and.b   #0xf0,r3l
+        add.w   e5,r5
+        add.w   e6,r6
+        and.b   #0xf0,r0l               ; even x2: the high half
+        mov.b   @er4,r0h
+        and.b   #0x0f,r0h
+        or.b    r0h,r0l
+        mov.b   r0l,@er4
+4:      ldm.l   @er7+,er4-er6
+        rts
+
 ; fill rows r4..e4 of the column at cr_col with shade r3l; keeps er0-er6
 _cr_fill:
         stm.l   er0-er3,@-er7

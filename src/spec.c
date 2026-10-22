@@ -491,7 +491,10 @@ static int do_plat_tag(s16 tag, int kind, line_t *line)
             p->speed = 1;
             p->high = next_highest_floor(s, s->floorh);
             p->dir = 1;
-            if (line && line->sec[0] >= 0) s->floortone = lvl.sectors[line->sec[0]].floortone;
+            if (line && line->sec[0] >= 0) {
+                s->floortone = lvl.sectors[line->sec[0]].floortone;
+                s->floorflat = lvl.sectors[line->sec[0]].floorflat;
+            }
             s->special = 0;
             break;
         case PL_RAISE24:
@@ -499,7 +502,10 @@ static int do_plat_tag(s16 tag, int kind, line_t *line)
             p->speed = 1;
             p->high = s->floorh + (kind == PL_RAISE24 ? 24 : 32);
             p->dir = 1;
-            if (line && line->sec[0] >= 0) s->floortone = lvl.sectors[line->sec[0]].floortone;
+            if (line && line->sec[0] >= 0) {
+                s->floortone = lvl.sectors[line->sec[0]].floortone;
+                s->floorflat = lvl.sectors[line->sec[0]].floorflat;
+            }
             break;
         case PL_PERPETUAL:
             p->speed = 4;

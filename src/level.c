@@ -132,7 +132,7 @@ int level_load(int idx)
     p = part(m, 1, &n);
     lvl.nsectors = n;
     lvl.sectors = alloc((u32)n * sizeof(sector_t));
-    for (i = 0; i < n; i++, p += 12) {
+    for (i = 0; i < n; i++, p += 14) {
         sector_t *s = &lvl.sectors[i];
         s->floorh = s->orig_floor = (s16)rd16(p);
         s->ceilh = s->orig_ceil = (s16)rd16(p + 2);
@@ -142,6 +142,8 @@ int level_load(int idx)
         s->floortone = p[8];
         s->ceiltone = p[9];
         s->liquid = p[10];
+        s->floorflat = p[11];
+        s->ceilflat = p[12];
     }
 
     p = part(m, 2, &n);
@@ -272,7 +274,30 @@ int level_load(int idx)
     for (i = 0; i < n; i++) {
         lvl.tex[i].wbits = p[8 * i];
         lvl.tex[i].hbits = p[8 * i + 1];
+        lvl.tex[i].shift = p[8 * i + 2];
         lvl.tex[i].texels = p + rd32(p + 8 * i + 4);
+    }
+
+    p = part(m, 11, &n);
+    lvl.nflat = n;
+    lvl.flat = alloc((u32)n * sizeof(flat_t));
+    /* every flat becomes 16x16 texels (4x4 units each: the pack's are 64 /
+     * 2^bits units, 2^bits a side) at a 256-byte boundary, so the Cybiko's
+     * span loop finds a texel by setting an address's low byte */
+    {
+        u8 *buf = alloc((u32)n * 256 + 255);
+        if (n && !buf) return 0;
+        buf += (u8)(0 - (unsigned long)buf);
+        for (i = 0; i < n; i++) {
+            const u8 *src = p + rd32(p + 8 * i + 4);
+            u8 b = p[8 * i], *d = buf + 256L * i;
+            s16 x, y;
+            for (y = 0; y < 16; y++)
+                for (x = 0; x < 16; x++)
+                    d[y * 16 + x] = b >= 4 ? src[((y << (b - 4)) << b) + (x << (b - 4))]
+                                           : src[((y >> (4 - b)) << b) + (x >> (4 - b))];
+            lvl.flat[i].texels = d;
+        }
     }
 
     /* lines per sector */

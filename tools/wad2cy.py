@@ -150,9 +150,6 @@ def texture_tones(wad, lum):
     return tones
 
 
-TEX_SHRINK = 4         # wall textures: one texel per 4x4 pixels
-
-
 def pow2(n):
     p = 1
     while p < n:
@@ -161,12 +158,14 @@ def pow2(n):
 
 
 class Textures:
-    """Wall textures composed from their patches and shrunk to TEX_SHRINK,
-    in 16 tones. The texel counts are rounded up to powers of two (the
-    texture is repeated to fill them) so the game can wrap with a mask."""
+    """Wall textures composed from their patches and shrunk, in 16 tones, so
+    that the longer side has at most `texels` texels: one texel covers a
+    square of 2**shift pixels. The texel counts are rounded up to powers of
+    two (the texture is repeated to fill them) so the game can wrap with a
+    mask."""
 
-    def __init__(self, wad, lum):
-        self.wad, self.lum = wad, lum
+    def __init__(self, wad, lum, texels):
+        self.wad, self.lum, self.texels = wad, lum, texels
         pnames = wad.get("PNAMES")
         n = struct.unpack_from("<i", pnames, 0)[0]
         self.pnames = [pnames[4 + 8 * i:12 + 8 * i].split(b"\0")[0].decode("latin-1").upper()
@@ -193,7 +192,7 @@ class Textures:
         return self.patches[idx]
 
     def get(self, name):
-        """(log2 width, log2 height, texels column by column) or None."""
+        """(log2 width, log2 height, shift, texels column by column) or None."""
         if name in self.cache:
             return self.cache[name]
         d = self.defs.get(name)
@@ -212,19 +211,42 @@ class Textures:
                                 img[ox + x][oy + y] = self.lum[c]
             px = [v for col in img for v in col if v is not None]
             mean = sum(px) / len(px) if px else 128
-            tw, th = pow2(-(-w // TEX_SHRINK)), pow2(-(-h // TEX_SHRINK))
+            f = pow2(-(-max(w, h) // self.texels))
+            tw, th = pow2(-(-w // f)), pow2(-(-h // f))
             texels = bytearray()
             for tx in range(tw):
                 for ty in range(th):
-                    vals = [img[(tx * TEX_SHRINK + i) % w][(ty * TEX_SHRINK + j) % h]
-                            for i in range(TEX_SHRINK) for j in range(TEX_SHRINK)]
+                    vals = [img[(tx * f + i) % w][(ty * f + j) % h]
+                            for i in range(f) for j in range(f)]
                     vals = [v for v in vals if v is not None]
                     v = sum(vals) / len(vals) if vals else mean
                     v = mean + (v - mean) * 1.6         # more contrast for 4 greys
                     texels.append(max(0, min(15, int(v / 16))))
-            out = (tw.bit_length() - 1, th.bit_length() - 1, bytes(texels))
+            out = (tw.bit_length() - 1, th.bit_length() - 1, f.bit_length() - 1, bytes(texels))
         self.cache[name] = out
         return out
+
+
+def flat_texels(wad, lum, texels):
+    """Floor and ceiling flats (64x64) shrunk to texels x texels (at most 16), in
+    16 tones, row by row: name -> (log2 size, shift, texels)."""
+    out = {}
+    n = min(16, pow2(texels))      # the game uses 16x16
+    f = 64 // n
+    for name, i in wad.between(("F_START", "FF_START"), ("F_END", "FF_END")).items():
+        data = wad.lump(i)
+        if len(data) < 4096:
+            continue
+        px = [lum[b] for b in data[:4096]]
+        mean = sum(px) / 4096
+        t = bytearray()
+        for ty in range(n):
+            for tx in range(n):
+                v = sum(px[(ty * f + j) * 64 + tx * f + i] for i in range(f) for j in range(f)) / (f * f)
+                v = mean + (v - mean) * 1.6
+                t.append(max(0, min(15, int(v / 16))))
+        out[name] = (n.bit_length() - 1, f.bit_length() - 1, bytes(t))
+    return out
 
 
 def flat_tones(wad, lum):
@@ -491,7 +513,7 @@ def tone(tones, name, default=0):
     return max(1, min(255, tones.get(name, default or 128)))
 
 
-def convert_map(wad, name, ttones, ftones, class_of, textures):
+def convert_map(wad, name, ttones, ftones, class_of, textures, flats):
     L = map_lumps(wad, name)
     if not L:
         return None
@@ -502,6 +524,17 @@ def convert_map(wad, name, ttones, ftones, class_of, textures):
 
     verts = [struct.unpack_from("<hh", L["VERTEXES"], 4 * i) for i in range(len(L["VERTEXES"]) // 4)]
     sectors = []
+    flatids = {}                # flat name -> index in this map's flats
+
+    def flat(name):
+        if name not in flats or name.startswith("F_SKY"):
+            return 255
+        if name not in flatids:
+            if len(flatids) >= 255:
+                return 255
+            flatids[name] = len(flatids)
+        return flatids[name]
+
     for i in range(len(L["SECTORS"]) // 26):
         fh, ch, ft, ct, light, special, tag = struct.unpack_from("<hh8s8shhh", L["SECTORS"], 26 * i)
         ft, ct = s8(ft, 8), s8(ct, 8)
@@ -509,7 +542,8 @@ def convert_map(wad, name, ttones, ftones, class_of, textures):
                         max(1, min(255, ftones.get(ft, 128))),
                         0 if ct.startswith("F_SKY") else max(1, min(255, ftones.get(ct, 128))),
                         1 if ft.startswith("NUKAGE") or ft.startswith("FWATER")
-                        or ft.startswith("LAVA") or ft.startswith("BLOOD") or ft.startswith("SLIME") else 0))
+                        or ft.startswith("LAVA") or ft.startswith("BLOOD") or ft.startswith("SLIME") else 0,
+                        flat(ft), flat(ct)))
     sides = []
     texids = {}                 # texture name -> index in this map's textures
 
@@ -564,12 +598,12 @@ def convert_map(wad, name, ttones, ftones, class_of, textures):
     reject = L.get("REJECT", b"")
 
     # PACK FORMAT, one map:
-    #   name (4 bytes), then 11 x (u16 count, u32 offset from the map start):
+    #   name (4 bytes), then 12 x (u16 count, u32 offset from the map start):
     #   vertexes, sectors, sides, lines, segs, subsectors, nodes, things,
-    #   blockmap, reject, textures (see src/level.c)
+    #   blockmap, reject, textures, flats (see src/level.c)
     parts = []
     parts.append((len(verts), b"".join(struct.pack(">hh", *v) for v in verts)))
-    parts.append((len(sectors), b"".join(struct.pack(">hhBBhBBBx", *s) for s in sectors)))
+    parts.append((len(sectors), b"".join(struct.pack(">hhBBhBBBBBx", *s) for s in sectors)))
     parts.append((len(sides), b"".join(struct.pack(">BBBBBBhhh", *s) for s in sides)))
     parts.append((len(lines), b"".join(struct.pack(">hhHhhhh", *l) for l in lines)))
     parts.append((len(segs), b"".join(struct.pack(">hhhhhh", *s) for s in segs)))
@@ -579,15 +613,26 @@ def convert_map(wad, name, ttones, ftones, class_of, textures):
     bm = struct.unpack("<%dh" % (len(bmap) // 2), bmap)
     parts.append((len(bm), struct.pack(">%dh" % len(bm), *bm)))
     parts.append((len(reject), bytes(reject)))
-    # textures: per texture u8 log2 width, u8 log2 height, u16 0, u32 offset
-    # of its texels from the start of this part; texels column by column
+    # textures: per texture u8 log2 width, u8 log2 height (in texels), u8
+    # log2 of the pixels per texel, u8 0, u32 offset of its texels from the
+    # start of this part; texels column by column
     tl = sorted(texids, key=texids.get)
     tdir, tdata = b"", b""
     for n in tl:
-        lw, lh, px = textures.get(n)
-        tdir += struct.pack(">BBHI", lw, lh, 0, 8 * len(tl) + len(tdata))
+        lw, lh, sh, px = textures.get(n)
+        tdir += struct.pack(">BBBBI", lw, lh, sh, 0, 8 * len(tl) + len(tdata))
         tdata += px
     parts.append((len(tl), tdir + tdata))
+    # flats: per flat u8 log2 size (in texels), u8 log2 of the units per
+    # texel, u16 0, u32 offset of its texels from the start of this part;
+    # texels row by row
+    fl = sorted(flatids, key=flatids.get)
+    fdir, fdata = b"", b""
+    for n in fl:
+        lb, sh, px = flats[n]
+        fdir += struct.pack(">BBHI", lb, sh, 0, 8 * len(fl) + len(fdata))
+        fdata += px
+    parts.append((len(fl), fdir + fdata))
     head_size = 4 + 6 * len(parts)
     head = bytearray(name.encode("latin-1")[:4].ljust(4, b"\0"))
     body = bytearray()
@@ -620,6 +665,8 @@ def main():
     p.add_argument("wad")
     p.add_argument("out", nargs="?")
     p.add_argument("--maps", help="comma-separated map names (default: all)")
+    p.add_argument("--texels", type=int, default=16,
+                   help="texels along a texture's longer side, at most (default 16)")
     p.add_argument("--list", action="store_true", help="list the maps in the WAD")
     a = p.parse_args()
     wad = Wad(a.wad)
@@ -634,7 +681,8 @@ def main():
     lum = palette_lum(wad)
     ttones = texture_tones(wad, lum)
     ftones = flat_tones(wad, lum)
-    textures = Textures(wad, lum)
+    textures = Textures(wad, lum, a.texels)
+    flats = flat_texels(wad, lum, a.texels)
 
     # sprites: slot = class * FRAMES_PER_CLASS + frame
     classes = {name: i for i, name in enumerate(CLASS_ORDER)}
@@ -660,7 +708,7 @@ def main():
 
     blobs = []
     for m in want:
-        r = convert_map(wad, m, ttones, ftones, class_of, textures)
+        r = convert_map(wad, m, ttones, ftones, class_of, textures, flats)
         if r is None:
             sys.exit("%s: no map %s" % (a.wad, m))
         blob, st = r

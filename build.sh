@@ -8,13 +8,15 @@
 #         (Freedoom's does; the shareware one only allows passing on the
 #         unmodified shareware package).
 #   MAPS  comma-separated maps to put in the pack (default: all of them).
-#         The shareware episode's 9 maps make a 940 KB pack, which fits the
-#         MP3 cartridge's card; the Cybiko's own storage holds only a few
-#         maps (each is 60-150 KB).
+#         The shareware episode's 9 maps make an 815 KB pack, which fits
+#         the MP3 cartridge's card; the Cybiko's own storage holds only a
+#         few maps (each is 55-135 KB).
 #
 # Needs Python 3 and the GNU H8 tools (Debian/Ubuntu: binutils-h8300-hms
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
-# Games. The results are build/doom.app, the game, and build/doom.dat, the
+# Games. TEXELS=8 or 32 sets the most texels along a wall texture's longer
+# side (default 16; 8 makes the pack about 10% smaller, 32 about 20%
+# bigger). The results are build/doom.app, the game, and build/doom.dat, the
 # pack: see README.md for where they go.
 set -e
 cd "$(dirname "$0")"
@@ -26,7 +28,7 @@ mkdir -p build
 CC=h8300-hitachi-coff-gcc
 CFLAGS="-ms -O2 -fomit-frame-pointer -Wall -ffreestanding -fno-builtin"
 if [ -n "$2" ]; then MAPS="--maps $2"; else MAPS=""; fi
-python3 tools/wad2cy.py "$1" build/doom.dat $MAPS
+python3 tools/wad2cy.py "$1" build/doom.dat $MAPS --texels "${TEXELS:-16}"
 objs=""
 for f in src/*.c cybiko/hw_cybiko.c; do
     o=build/$(basename "$f" .c).o
