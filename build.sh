@@ -13,8 +13,8 @@
 #
 # Needs Python 3 and the GNU H8 tools (Debian/Ubuntu: binutils-h8300-hms
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
-# Games. TEXELS=8 or 32 sets the most texels along a wall texture's longer
-# side (default 16); TEXELS=0 leaves the textures out (flat walls only).
+# Games. TEXELS=8 or 16 sets the most texels along a wall texture's longer
+# side (default 32); TEXELS=0 leaves the textures out (flat walls only).
 # The results are build/doom.app, the game, and build/pack/, the level
 # pack: see README.md for where they go.
 set -e
@@ -28,7 +28,7 @@ CC=h8300-hitachi-coff-gcc
 CFLAGS="-ms -O2 -fomit-frame-pointer -Wall -ffreestanding -fno-builtin"
 if [ -n "$2" ]; then MAPS="--maps $2"; else MAPS=""; fi
 rm -rf build/pack
-python3 tools/wad2cy.py "$1" build/pack $MAPS --texels "${TEXELS:-16}"
+python3 tools/wad2cy.py "$1" build/pack $MAPS --texels "${TEXELS:-32}"
 objs=""
 for f in src/*.c cybiko/hw_cybiko.c; do
     o=build/$(basename "$f" .c).o

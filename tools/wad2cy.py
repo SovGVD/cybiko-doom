@@ -632,8 +632,8 @@ def main():
     p.add_argument("wad")
     p.add_argument("out", nargs="?", help="folder for doom.dat and the map files")
     p.add_argument("--maps", help="comma-separated map names (default: all)")
-    p.add_argument("--texels", type=int, default=16,
-                   help="texels along a texture's longer side, at most (default 16; "
+    p.add_argument("--texels", type=int, default=32,
+                   help="texels along a texture's longer side, at most (default 32; "
                    "0: no textures, the walls are flat shades)")
     p.add_argument("--list", action="store_true", help="list the maps in the WAD")
     a = p.parse_args()

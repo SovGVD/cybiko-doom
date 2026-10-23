@@ -8,8 +8,8 @@ hardware (LCD controller, key matrix, timer) directly.
 
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
-- wall textures are shrunk to at most 16 texels along their longer side
-  (8, 32 or none when building, see below) in 16 tones, dithered to the 4
+- wall textures are shrunk to at most 32 texels along their longer side
+  (8, 16 or none when building, see below) in 16 tones, dithered to the 4
   greys and dimmed with the sector light and the distance; floors and
   ceilings are flat dithered shades (from each flat's average brightness,
   the sector light and the distance); edges are drawn black;
@@ -71,7 +71,7 @@ Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
 
     ./build.sh doom1.wad                    # all the WAD's maps
     ./build.sh doom1.wad E1M1,E1M2          # pick the maps
-    TEXELS=8 ./build.sh doom1.wad           # coarser wall textures, smaller pack
+    TEXELS=16 ./build.sh doom1.wad          # coarser wall textures, smaller pack
     TEXELS=0 ./build.sh doom1.wad E1M1      # no textures: the smallest pack
 
 This makes:
@@ -82,21 +82,21 @@ This makes:
   main desktop instead).
 - `build/pack/`, the level pack: `doom.dat` (about 19 KB: the map list and
   the shrunk sprites) and a file per map, `doom_e1m1.dat` and so on
-  (20-56 KB each in the shareware episode: the map with its shrunk wall
+  (22-61 KB each in the shareware episode: the map with its shrunk wall
   textures). All of it is packed with Deflate. The game looks for each
   file on the MP3 cartridge's card first (`/MP3/`, the card's top folder;
   on Dragonfruit that is `/Cybiko/card/` on the SD card) and then in the
   Cybiko's own storage (next to the app), and offers the maps whose files
   it finds: copy over only the maps you want.
 
-The shareware episode's 9 maps make 343 KB in all (331 KB with
-`TEXELS=8`, 382 KB with `TEXELS=32`, 323 KB with `TEXELS=0`). The app,
-`doom.dat` and E1M1 take about 100 KB of the Cybiko's own storage.
+The shareware episode's 9 maps make 382 KB in all (343 KB with
+`TEXELS=16`, 331 KB with `TEXELS=8`, 323 KB with `TEXELS=0`). The app,
+`doom.dat` and E1M1 take about 105 KB of the Cybiko's own storage.
 
 The game unpacks the sprites when it starts and each map when it is played
 (about 3 seconds for E1M1 in the emulator, while CyOS shows its busy
 sign). It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
-room for the biggest map it found unpacked (up to 125 KB in the shareware
+room for the biggest map it found unpacked (up to 146 KB in the shareware
 episode).
 
 ## The WAD and its licence
