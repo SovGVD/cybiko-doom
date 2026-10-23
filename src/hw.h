@@ -27,7 +27,7 @@ u16 hw_keys(void);
 u8 hw_weapon_key(void);     /* 1-7 for F1-F7 held, else 0 */
 u32 hw_clock(void);         /* ticks of HW_HZ */
 void hw_present(void);      /* fb to the screen */
-void hw_present_rows(s16 rows);     /* only its top rows */
+void hw_present_rows(s16 from, s16 to);     /* only rows from..to-1 */
 void hw_idle(void);         /* keep the watchdog happy */
 void hw_watchdog(void);     /* only that (long work such as unpacking) */
 void hw_debug(const char *s);

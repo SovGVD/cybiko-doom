@@ -144,6 +144,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--low")) low_detail = 1;
         else if (!strcmp(argv[i], "--lowest")) low_detail = 2;
         else if (!strcmp(argv[i], "--interlace")) interlace = 1;
+        else if (!strcmp(argv[i], "--view") && i + 1 < argc) view_size = (u8)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             FILE *s = fopen(argv[++i], "r");
             char line[256], keys[64];
@@ -188,8 +189,9 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void hw_present_rows(s16 rows)
+void hw_present_rows(s16 from, s16 to)
 {
-    (void)rows;
+    (void)from;
+    (void)to;
     hw_present();
 }

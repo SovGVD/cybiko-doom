@@ -182,7 +182,7 @@ u8 hw_weapon_key(void)
 
 void hw_present(void)
 {
-    hw_present_rows(SCREENH);
+    hw_present_rows(0, SCREENH);
 }
 
 /* text on the serial console (SCI1), where the emulator prints it */

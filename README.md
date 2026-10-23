@@ -31,6 +31,8 @@ The title menu trades looks for speed before a game starts:
   one texel for two rows) or AUTO, the default: low detail only while a
   frame takes longer than 1/15 s, high again under 1/24 s, so open areas
   turn blocky and corridors stay sharp;
+- VIEW: FULL (160x84), MEDIUM (a 128x68 window) or SMALL (96x52), as
+  Doom's own screen size: fewer pixels to fill, with a dark frame around;
 - COLUMNS: ALL, or ALTERNATE: each frame draws every other column of
   the walls and things (the odd ones, then the even ones), so a still view
   is complete and a moving one is a little rougher;
@@ -49,8 +51,14 @@ Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 | flat, low detail | 23-33 | 15-21 | 35 |
 | textured, auto detail, alternate columns | 20-27 | 16-21 | 35 |
 | textured near, low detail, alternate columns | 26-33 | 16-22 | 35 |
+| textured, high detail, medium view | 18-23 | 11-20 | 35 |
+| textured, high detail, small view | 21-28 | 14-26 | 35 |
+| textured, auto detail, small view | 21-28 | 16-22 | 35 |
+| textured near, low detail, alternate columns, small view | 28-34 | 19-21 | 35 |
 
-LOWEST is no faster than LOW: with 40 columns the time goes to the
+A smaller view gains less than its pixel count, since much of a frame is
+the game, the walls' and things' setup and the copy to the LCD (only the
+window's rows when nothing else changed). LOWEST is no faster than LOW: with 40 columns the time goes to the
 per-column setup, the BSP walk, the sprites and the copy to the LCD rather
 than to filling the columns.
 

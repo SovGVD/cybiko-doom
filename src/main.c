@@ -107,6 +107,7 @@ static int render_hud(void)
 static void render_overlays(void)
 {
     if (player.messagetics) {
+        render_border_dirty();          /* the frame cleans it next time */
         fill_rect(0, 0, text_width(player.message) + 3, 7, 0);
         draw_text(1, 1, player.message, 6);
     }
@@ -154,38 +155,41 @@ static int title(int *map)
     for (;;) {
         u16 k;
         clear_screen(0);
-        fill_rect(0, 0, SCREENW, 30, 6);
-        draw_big_text(48, 6, "DOOM", 0);
-        draw_text(54, 20, "FOR CYBIKO", 1);
-        draw_text(10, 32, sel == 0 ? ">" : " ", 6);
-        draw_text(18, 32, "MAP", 6);
-        draw_text(70, 32, level_name(*map), 6);
-        draw_text(10, 39, sel == 1 ? ">" : " ", 6);
-        draw_text(18, 39, "SKILL", 6);
-        draw_text(70, 39, skills[skill], 6);
-        draw_text(10, 46, sel == 2 ? ">" : " ", 6);
-        draw_text(18, 46, "ALWAYS RUN", 6);
-        draw_text(70, 46, always_run ? "ON" : "OFF", 6);
-        draw_text(10, 53, sel == 3 ? ">" : " ", 6);
-        draw_text(18, 53, "WEAPON", 6);
-        draw_text(70, 53, show_weapon ? "SHOWN" : "HIDDEN (FASTER)", 6);
-        draw_text(10, 60, sel == 4 ? ">" : " ", 6);
-        draw_text(18, 60, "WALLS", 6);
-        draw_text(70, 60, show_textures == 1 ? "TEXTURED" : show_textures ? "TEXTURED NEAR" : "FLAT (FASTEST)", 6);
-        draw_text(10, 67, sel == 5 ? ">" : " ", 6);
-        draw_text(18, 67, "DETAIL", 6);
-        draw_text(70, 67, detail == 3 ? "AUTO" : detail == 2 ? "LOWEST" : detail ? "LOW" : "HIGH", 6);
-        draw_text(10, 74, sel == 6 ? ">" : " ", 6);
-        draw_text(18, 74, "COLUMNS", 6);
-        draw_text(70, 74, interlace ? "ALTERNATE (FASTER)" : "ALL", 6);
-        center_text(83, "ENTER: PLAY   ESC: QUIT", 4);
-        center_text(91, "HELP KEY: FPS ON/OFF", 4);
+        fill_rect(0, 0, SCREENW, 27, 6);
+        draw_big_text(48, 4, "DOOM", 0);
+        draw_text(54, 19, "FOR CYBIKO", 1);
+        draw_text(10, 28, sel == 0 ? ">" : " ", 6);
+        draw_text(18, 28, "MAP", 6);
+        draw_text(70, 28, level_name(*map), 6);
+        draw_text(10, 35, sel == 1 ? ">" : " ", 6);
+        draw_text(18, 35, "SKILL", 6);
+        draw_text(70, 35, skills[skill], 6);
+        draw_text(10, 42, sel == 2 ? ">" : " ", 6);
+        draw_text(18, 42, "ALWAYS RUN", 6);
+        draw_text(70, 42, always_run ? "ON" : "OFF", 6);
+        draw_text(10, 49, sel == 3 ? ">" : " ", 6);
+        draw_text(18, 49, "WEAPON", 6);
+        draw_text(70, 49, show_weapon ? "SHOWN" : "HIDDEN (FASTER)", 6);
+        draw_text(10, 56, sel == 4 ? ">" : " ", 6);
+        draw_text(18, 56, "WALLS", 6);
+        draw_text(70, 56, show_textures == 1 ? "TEXTURED" : show_textures ? "TEXTURED NEAR" : "FLAT (FASTEST)", 6);
+        draw_text(10, 63, sel == 5 ? ">" : " ", 6);
+        draw_text(18, 63, "DETAIL", 6);
+        draw_text(70, 63, detail == 3 ? "AUTO" : detail == 2 ? "LOWEST" : detail ? "LOW" : "HIGH", 6);
+        draw_text(10, 70, sel == 6 ? ">" : " ", 6);
+        draw_text(18, 70, "COLUMNS", 6);
+        draw_text(70, 70, interlace ? "ALTERNATE (FASTER)" : "ALL", 6);
+        draw_text(10, 77, sel == 7 ? ">" : " ", 6);
+        draw_text(18, 77, "VIEW", 6);
+        draw_text(70, 77, view_size == 2 ? "SMALL (FASTEST)" : view_size ? "MEDIUM (FASTER)" : "FULL", 6);
+        center_text(86, "ENTER: PLAY   ESC: QUIT", 4);
+        center_text(93, "HELP KEY: FPS ON/OFF", 4);
         hw_present();
         k = wait_key();
         if (k & K_ESC) return 0;
         if (k & (K_USE | K_FIRE)) return 1;
-        if (k & K_UP) sel = sel ? sel - 1 : 6;
-        if (k & K_DOWN) sel = sel < 6 ? sel + 1 : 0;
+        if (k & K_UP) sel = sel ? sel - 1 : 7;
+        if (k & K_DOWN) sel = sel < 7 ? sel + 1 : 0;
         if (k & (K_LEFT | K_RIGHT)) {
             int d = (k & K_LEFT) ? -1 : 1;
             if (sel == 0) *map = (*map + d + level_count()) % level_count();
@@ -195,6 +199,10 @@ static int title(int *map)
             if (sel == 4) show_textures = (u8)((show_textures + (d < 0 ? 2 : 1)) % 3);
             if (sel == 5) detail = (u8)((detail + (d < 0 ? 3 : 1)) % 4);
             if (sel == 6) interlace ^= 1;
+            if (sel == 7) {
+                view_size = (u8)((view_size + (d < 0 ? 2 : 1)) % 3);
+                render_set_view();
+            }
         }
         if (k & K_FPS) show_fps ^= 1;
     }
@@ -309,6 +317,7 @@ static void start_level(int map)
     clear_screen(0);
     center_text(46, "LOADING...", 6);
     hw_present();
+    render_border_dirty();
     game_start_level(map);
     hud_valid = 0;
 }
@@ -332,10 +341,14 @@ static void play(int map)
         prevkeys = keys;
         if (pressed & K_ESC) {
             if (pause_menu()) return;
+            render_border_dirty();
             last = hw_clock();
             continue;
         }
-        if (pressed & K_MAP) automap ^= 1;
+        if (pressed & K_MAP) {
+            automap ^= 1;
+            render_border_dirty();
+        }
         if (pressed & K_FPS) show_fps ^= 1;
         if (pressed & K_TOGGLERUN) {
             always_run ^= 1;
@@ -382,7 +395,7 @@ static void play(int map)
         else render_view();
         render_overlays();
         if (render_hud()) hw_present();
-        else hw_present_rows(VIEWH);
+        else hw_present_rows(automap || player.messagetics ? 0 : render_rows_from(), VIEWH);
         frames++;
         if (detail == 3 && !automap) {
             /* auto detail: low when a frame takes over 1/15 s, high again

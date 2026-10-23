@@ -15,6 +15,7 @@ extern u8 fb[SCREENH * ROWBYTES];
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
 extern u8 show_textures;        /* walls: 0 flat, 1 textured, 2 textured near (the title menu) */
 extern u8 interlace;            /* every other column a frame (the title menu) */
+extern u8 view_size;            /* 0 the whole view, 1 a 128x68 window, 2 96x52 (the title menu) */
 extern u8 low_detail;           /* 1: 40 columns of 4 pixels, 2: and 2 rows a texel (the title menu) */
 
 /* data the renderer uses most goes into the H8S's fast on-chip RAM
@@ -37,6 +38,9 @@ extern u8 low_detail;           /* 1: 40 columns of 4 pixels, 2: and 2 rows a te
 #define SHADES 7
 
 void render_init(void);
+void render_set_view(void);     /* after view_size changes */
+void render_border_dirty(void); /* something was drawn over the view's frame */
+s16 render_rows_from(void);     /* the first screen row render_view changed */
 void render_view(void);         /* the 3D view of player.mo */
 void render_automap(void);
 

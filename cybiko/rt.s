@@ -443,16 +443,21 @@ _cr_fill:
 3:      ldm.l   @er7+,er0-er3
         rts
 
-; void hw_present_rows(s16 rows): the top rows of fb to the LCD (HD66421:
-; index register at 100000, data at 100001; its row 0 is the bottom one),
-; then reset the watchdog
+; void hw_present_rows(s16 from, s16 to): rows from..to-1 of fb to the LCD
+; (HD66421: index register at 100000, data at 100001; its row 0 is the
+; bottom one), then reset the watchdog
         .global _hw_present_rows_img
 _hw_present_rows_img:
-        mov.w   r0,r3
+        mov.w   r1,r3
+        sub.w   r0,r3                   ; rows to copy
         ble     3f
-        mov.l   #_fb,er1
+        mov.w   #99,e3
+        sub.w   r0,e3                   ; the LCD's row: the top one is 99
+        mov.w   #40,r1
+        mulxu.w r1,er0                  ; er0 = from * 40
+        mov.l   er0,er1
+        add.l   #_fb,er1
         mov.l   #0x100000,er2
-        mov.w   #99,e3                  ; the LCD's row: the top one is 99
 1:      mov.b   #2,r0h
         mov.b   r0h,@er2
         sub.b   r0h,r0h

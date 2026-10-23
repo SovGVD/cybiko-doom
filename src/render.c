@@ -41,9 +41,20 @@ static s16 vcos, vsin;          /* Q14 */
 u8 tex_luts[32][2][16] IRAM;
 u8 low_detail;                  /* 1: columns of 4 pixels, 2: and 2 rows a texel */
 u8 interlace;                   /* every other column a frame (the title menu) */
+u8 view_size;
+/* The 3D view's window on the screen (render_set_view): a smaller one has
+ * fewer pixels to fill. Columns are numbered on the screen (two or four
+ * pixels each), so those below col0 or from vieww up are outside it. */
+static s16 view_px0, view_py0, view_pw, view_ph;    /* in pixels and rows */
+static s16 focal;               /* half the window's width in pixels */
+static s16 xoff;                /* Q4 pixels: the window's centre */
+static s16 centery, viewbot;    /* the centre row and the first row below */
+static s32 yscale;              /* focal in the units of scale (see yproj) */
+static s16 near_scale;          /* scale at 512 units, for TEXTURED NEAR */
+static s16 col0;                /* the window's first column */
 static u8 col_skip;             /* 1: skip the columns whose parity is not col_par */
 static u8 col_par;
-static s16 vieww;               /* columns: VIEWW, or half in low detail */
+static s16 vieww;               /* the first column past the window */
 static u8 colbits;              /* log2 of a column's width in Q4 pixels */
 static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 
@@ -127,7 +138,7 @@ IRAM_FN(int, clip_seg, (s16 *x1, s16 *z1, s16 *x2, s16 *z2, s16 *u1, s16 *u2, u8
 /* screen x (Q4) of a clipped point */
 static s16 project_x(s16 x, s16 z)
 {
-    return (s16)(SCREENW * 8 + div32_16(MUL16(x, SCREENW * 8), z));
+    return (s16)(xoff + div32_16(MUL16(x, focal * 16), z));
 }
 
 /* ---- solid ranges (Doom's solidsegs) ---- */
@@ -138,7 +149,7 @@ static cliprange_t solidsegs[MAXSEGS] IRAM, *newend;
 static void clear_clips(void)
 {
     solidsegs[0].first = -0x7fff;
-    solidsegs[0].last = -1;
+    solidsegs[0].last = col0 - 1;
     solidsegs[1].first = vieww;
     solidsegs[1].last = 0x7fff;
     newend = solidsegs + 2;
@@ -172,7 +183,7 @@ static s32 yproj(s16 dh, s16 scale)
     s32 v = MUL16(dh, scale);           /* rows Q10 */
     if (v > 0x1000000) v = 0x1000000;
     if (v < -0x1000000) v = -0x1000000;
-    return ((s32)CENTERY << 16) - (v << 6) + 0x8000;
+    return ((s32)centery << 16) - (v << 6) + 0x8000;
 }
 
 /* value at the centre of column c, given its values at sx1 and sx2 */
@@ -272,7 +283,7 @@ IRAM_FN(void, tex_piece, (s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s
     tl_col = t->texels + ((((u >> t->shift) & ((1 << t->wbits) - 1))) << t->hbits);
     tl_hmask = (u8)((1 << t->hbits) - 1);
     tl_step = (u16)(step >> 8);
-    tl_v = (u16)((((s32)vtop << 8) >> t->shift) + MUL16(y1 - CENTERY, tl_step) - (tl_step >> 1));
+    tl_v = (u16)((((s32)vtop << 8) >> t->shift) + MUL16(y1 - centery, tl_step) - (tl_step >> 1));
     tline(x, y1, y2);
 }
 
@@ -337,7 +348,7 @@ IRAM_FN(void, render_columns, (s16 x, s16 stop))
                 if (topedge) dot(x, yl, EDGE);
                 if (botedge && yh > yl) dot(x, yh, EDGE);
             }
-            ceilclip[x] = VIEWH;
+            ceilclip[x] = (s8)viewbot;
             floorclip[x] = -1;
         } else {
             if (w.drawtop) {
@@ -446,7 +457,7 @@ static u8 bright(u8 tone, u8 light)
     return (u8)(((u16)tone * light) >> 8);
 }
 
-#define NEARSCALE (163840L / 512)
+/* scale at 512 units for TEXTURED NEAR: near_scale (render_set_view) */
 
 static void add_seg(const seg_t *seg)
 {
@@ -470,7 +481,7 @@ static void add_seg(const seg_t *seg)
     c0 = (w.sx1 + (1 << colbits) - 1) >> colbits;
     c1 = ((w.sx2 + (1 << colbits) - 1) >> colbits) - 1;
     if (c0 > c1) return;
-    if (c0 < 0) c0 = 0;
+    if (c0 < col0) c0 = col0;
     if (c1 > vieww - 1) c1 = vieww - 1;
     if (c0 > c1) return;
 
@@ -492,7 +503,7 @@ static void add_seg(const seg_t *seg)
     w.edge2 = (seg->edge & 2) && !cut2;
     w.solid = !back;
     {
-        s16 s1 = div32_16(163840L, z1), s2 = div32_16(163840L, z2);
+        s16 s1 = div32_16(yscale, z1), s2 = div32_16(yscale, z2);
         s16 wt = front->ceilh - viewz, wb = front->floorh - viewz;
         interp(yproj(wt, s1), yproj(wt, s2), &w.top, &w.topstep, c0);
         interp(yproj(wb, s1), yproj(wb, s2), &w.bot, &w.botstep, c0);
@@ -506,7 +517,7 @@ static void add_seg(const seg_t *seg)
         w.tmid = w.ttop = w.tbot = NULL;
         /* show_textures 2: only near walls (closer than 512 units at
          * either end) are textured */
-        if (show_textures == 1 || (show_textures == 2 && (s1 > NEARSCALE || s2 > NEARSCALE))) {
+        if (show_textures == 1 || (show_textures == 2 && (s1 > near_scale || s2 > near_scale))) {
             u16 fl = lvl.lines[seg->line].flags;
             interp(MUL16(u1, s1), MUL16(u2, s2), &w.us, &w.usstep, c0);
             if (!back && seg->tmid < lvl.ntex) {
@@ -599,25 +610,25 @@ static void add_sprite(mobj_t *mo, const u8 *sil)
     if (!sil) sil = box_sil;
     cw = sil[0];
     f = sil[2];
-    scale = div32_16(163840L, tz);
+    scale = div32_16(yscale, tz);
     /* left and right edges in Q1 units relative to the thing */
     left = (s32)tx - (s32)(s8)sil[3] * f * 2;
     right = left + (s32)cw * f * 2;
     if (left < -32000 || right > 32000) return;
     /* columns: x = 40 + x*40/z (low detail) */
     {
-        s32 lx = ldiv32_16(MUL16((s16)left, SCREENW * 8), tz) + SCREENW * 8;
-        s32 rx = ldiv32_16(MUL16((s16)right, SCREENW * 8), tz) + SCREENW * 8;
+        s32 lx = ldiv32_16(MUL16((s16)left, focal * 16), tz) + xoff;
+        s32 rx = ldiv32_16(MUL16((s16)right, focal * 16), tz) + xoff;
         x1 = (s16)((lx + (1 << colbits) - 1) >> colbits);
         x2 = (s16)(((rx + (1 << colbits) - 1) >> colbits) - 1);
-        if (x1 > x2 || x2 < 0 || x1 >= vieww) return;
+        if (x1 > x2 || x2 < col0 || x1 >= vieww) return;
         v = &vis[nvis];
         /* cells per column */
         v->xstep = ldiv32_16((s32)cw << 16, (s16)((rx - lx) >> colbits ? (rx - lx) >> colbits : 1));
         v->xfrac = 0;
-        if (x1 < 0) {
-            v->xfrac = v->xstep * (s32)(-x1);
-            x1 = 0;
+        if (x1 < col0) {
+            v->xfrac = v->xstep * (s32)(col0 - x1);
+            x1 = col0;
         }
         if (x2 > vieww - 1) x2 = vieww - 1;
     }
@@ -727,7 +738,7 @@ IRAM_FN(void, draw_cells, (const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, 
     if (ch > 32) ch = 32;
     for (x = 0; x <= ch; x++, yy += ystep) {
         s32 y = yy >> 16;
-        rowtab[x] = (s16)(y < -1 ? -1 : y > VIEWH ? VIEWH : y);
+        rowtab[x] = (s16)(y < view_py0 - 1 ? view_py0 - 1 : y > viewbot ? viewbot : y);
     }
     for (x = x1; x <= x2; x++, xf += xstep) {
         s16 cx = (s16)(xf >> 16), n;
@@ -737,18 +748,18 @@ IRAM_FN(void, draw_cells, (const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, 
             col = next_column(col);
             colx++;
         }
-        if (x < 0 || x >= vieww) continue;
+        if (x < col0 || x >= vieww) continue;
         if (col_skip && ((x ^ col_par) & 1)) continue;
         cr_ebase = 0;
         if (x == x1 || (s16)((xf - xstep) >> 16) != cx) cr_ebase |= 0x40;
         if (x == x2 || (s16)((xf + xstep) >> 16) != cx) cr_ebase |= 0x80;
-        cr_lo = 0;
-        cr_hi = VIEWH - 1;
+        cr_lo = view_py0;
+        cr_hi = viewbot - 1;
         if (top) {
             cr_lo = top[x - x1] + 1;
             cr_hi = bot[x - x1] - 1;
-            if (cr_lo < 0) cr_lo = 0;
-            if (cr_hi > VIEWH - 1) cr_hi = VIEWH - 1;
+            if (cr_lo < view_py0) cr_lo = view_py0;
+            if (cr_hi > viewbot - 1) cr_hi = viewbot - 1;
             if (cr_lo > cr_hi) continue;
         }
         cr_col = fb + COLBYTE(x);
@@ -836,7 +847,7 @@ static int check_bbox(const s16 *bbox)
     if (c0 > c1) {
         s16 t = c0; c0 = c1; c1 = t;
     }
-    if (c0 < 0) c0 = 0;
+    if (c0 < col0) c0 = col0;
     if (c1 > vieww - 1) c1 = vieww - 1;
     if (c0 > c1) return 0;
     start = solidsegs;
@@ -906,19 +917,77 @@ static void draw_weapon(void)
      * here a cell is f/2 columns... keep it simple: centre it at the bottom */
     bobx = (s16)(MUL16(fsin(gametic * 512), (s16)(player.bob >> 12)) >> 18);
     boby = (s16)((MUL16(fcos(gametic * 1024), (s16)(player.bob >> 12)) >> 18) & 7);
-    /* a cell is f/2 screen pixels: f/4 columns (f/8 in low detail) and
-     * f/2 rows */
-    x = vieww / 2 - ((cw * f) >> (low_detail ? 4 : 3)) + (low_detail ? bobx >> 1 : bobx);
-    y0 = VIEWH - (ch * f) / 2 + 2 + boby;
+    /* a cell is f/2 screen pixels on the whole screen, f/4 columns (f/8 in
+     * low detail) and f/2 rows; a smaller window shrinks it too (f8: Q8) */
     {
-        s16 ncols = (s16)((cw * f) >> (low_detail ? 3 : 2));
+        s32 f8 = (s32)f * view_pw * 256 / SCREENW;
+        s16 ncols = (s16)((cw * f8) >> (low_detail ? 11 : 10));
         if (ncols < 1) ncols = 1;
+        x = (s16)((col0 + vieww) / 2 - ((cw * f8) >> (low_detail ? 12 : 11)) + (low_detail ? bobx >> 1 : bobx));
+        y0 = (s16)(viewbot - ((ch * f8) >> 9) + 2 + boby);
         draw_cells(sil, x, x + ncols - 1, 0, ((s32)cw << 16) / ncols, (s32)y0 << 16,
-                   (s32)f << 15, NULL, NULL, lvl.sectors[player.mo->ss->sector].light, 0);
+                   f8 << 7, NULL, NULL, lvl.sectors[player.mo->ss->sector].light, 0);
     }
 }
 
 /* ---- frame ---- */
+
+static u8 border_dirty = 1;     /* the frame around a smaller window needs drawing */
+
+/* the view's window for view_size, and what depends on its size */
+void render_set_view(void)
+{
+    int i;
+    view_pw = view_size == 2 ? 96 : view_size == 1 ? 128 : SCREENW;
+    view_ph = view_size == 2 ? 52 : view_size == 1 ? 68 : VIEWH;
+    view_px0 = (s16)((SCREENW - view_pw) / 2);
+    view_py0 = (s16)((VIEWH - view_ph) / 2);
+    viewbot = (s16)(view_py0 + view_ph);
+    centery = (s16)(view_py0 + view_ph / 2);
+    focal = (s16)(view_pw / 2);
+    xoff = (s16)((view_px0 + focal) * 16);
+    yscale = (s32)focal * 2048;         /* 163840 for the whole screen */
+    near_scale = (s16)(yscale / 512);
+    border_dirty = 1;
+    /* dimming by distance: scale/16 = 5120 / distance on the whole screen */
+    for (i = 0; i < 64; i++) {
+        s16 d = (s16)(112 + (i * 640) / focal);
+        dimtab[i] = (u8)(d > 255 ? 255 : d);
+    }
+}
+
+/* the dark frame around a smaller window, drawn again when something was
+ * drawn over it (render_border_dirty) */
+void render_border_dirty(void)
+{
+    border_dirty = 1;
+}
+
+static u8 border_drawn;         /* this frame, so the whole view changed */
+
+static void render_border(void)
+{
+    s16 y;
+    u8 *p = fb;
+    border_dirty = 0;
+    border_drawn = 1;
+    if (!view_size) return;
+    for (y = 0; y < VIEWH; y++, p += ROWBYTES) {
+        u8 b = pat[5][y & 1];
+        s16 i;
+        if (y < view_py0 || y >= viewbot) {
+            for (i = 0; i < ROWBYTES; i++) p[i] = b;
+        } else {
+            for (i = 0; i < view_px0 / 4; i++) p[i] = b;
+            for (i = (view_px0 + view_pw) / 4; i < ROWBYTES; i++) p[i] = b;
+        }
+    }
+}
+
+s16 render_rows_from(void)
+{
+    return border_drawn || !view_size ? 0 : view_py0;
+}
 
 void render_init(void)
 {
@@ -933,11 +1002,7 @@ void render_init(void)
         s16 sh = 6 - (s16)((i * 7) / 112);
         shadelut[i] = (u8)(sh < 0 ? 0 : sh > 5 ? 5 : sh);
     }
-    /* dimming by distance: scale/16 = 5120 / distance */
-    for (i = 0; i < 64; i++) {
-        s16 d = 112 + i * 8;
-        dimtab[i] = (u8)(d > 255 ? 255 : d);
-    }
+    render_set_view();
     for (s = 0; s < 32; s++)
         for (i = 0; i < 16; i++) {
             u8 sh = shadelut[(u8)((i * 17 * (s * 8 + 4)) >> 8)];
@@ -960,12 +1025,15 @@ void render_view(void)
     viewz = (s16)(player.viewz >> 16);
     vcos = fcos(pm->angle);
     vsin = fsin(pm->angle);
-    vieww = low_detail ? VIEWW / 2 : VIEWW;
     colbits = low_detail ? 6 : 5;
+    col0 = (s16)(view_px0 >> (colbits - 4));
+    vieww = (s16)(col0 + (view_pw >> (colbits - 4)));
     for (i = 0; i < VIEWW; i++) {
-        ceilclip[i] = -1;
-        floorclip[i] = VIEWH;
+        ceilclip[i] = (s8)(view_py0 - 1);
+        floorclip[i] = (s8)viewbot;
     }
+    border_drawn = 0;
+    if (border_dirty) render_border();
     clear_clips();
     nvis = 0;
     poolused = 0;
