@@ -37,7 +37,11 @@ static s16 viewz;               /* units */
 static s16 vcos, vsin;          /* Q14 */
 
 /* column clips: rows still open are ceilclip+1 .. floorclip-1 */
-u8 low_detail;                  /* columns of 4 pixels (the title menu) */
+/* The dither bytes of a texel's 16 tones for even and odd rows at 32
+ * lights (render_init), first in the on-chip RAM at a 32-byte boundary
+ * (link.ld checks): tline takes a byte by setting the low address byte. */
+u8 tex_luts[32][2][16] IRAM;
+u8 low_detail;                  /* 1: columns of 4 pixels, 2: and 2 rows a texel */
 static s16 vieww;               /* columns: VIEWW, or half in low detail */
 static u8 colbits;              /* log2 of a column's width in Q4 pixels */
 static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
@@ -223,13 +227,12 @@ static void dot(s16 x, s16 y, u8 shade)
 #define EDGE 6
 
 /* ---- textured columns ----
- * A texel has 16 tones; tex_lut has the dither pattern of each tone's shade
- * for even and odd rows, for the current light (rebuilt when it changes).
+ * A texel has 16 tones; tl_lut (one of tex_luts) has the dither pattern of
+ * each tone's shade for even and odd rows at the current light.
  * tline draws rows y1..y2 of column x from a texture column tl_col: texel
  * (tl_v >> 8) & tl_hmask at row y1, then tl_v += tl_step a row (8.8 fixed
  * point; the texture heights divide 256). cybiko/rt.s has it in assembler. */
-u8 tex_lut[2][16] IRAM;
-static u8 lut_light = 255;
+const u8 (*tl_lut)[16];     /* tex_luts[light >> 3] */
 const u8 *tl_col;
 u16 tl_v, tl_step;
 u8 tl_hmask;
@@ -241,24 +244,23 @@ void tline(s16 x, s16 y1, s16 y2)
     u8 *p = fb + y1 * ROWBYTES + COLBYTE(x);
     u8 keep = COLKEEP(x), odd = y1 & 1;
     u16 v = tl_v;
+    if (low_detail == 2) {          /* one texel for two rows */
+        for (; y1 < y2; y1 += 2, p += 2 * ROWBYTES, v += 2 * tl_step) {
+            u8 t = tl_col[(u8)(v >> 8) & tl_hmask];
+            p[0] = tl_lut[odd][t];
+            p[ROWBYTES] = tl_lut[odd ^ 1][t];
+        }
+        if (y1 == y2) *p = tl_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]];
+        return;
+    }
     for (; y1 <= y2; y1++, p += ROWBYTES, v += tl_step) {
-        *p = (*p & keep) | (tex_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & (u8)~keep);
+        *p = (*p & keep) | (tl_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & (u8)~keep);
         odd ^= 1;
     }
 }
 #endif
 
-static void set_tex_light(u8 l)
-{
-    u8 t;
-    if (l == lut_light) return;
-    lut_light = l;
-    for (t = 0; t < 16; t++) {
-        u8 sh = shadelut[(u8)(((u16)t * 17 * l) >> 8)];
-        tex_lut[0][t] = pat[sh][0];
-        tex_lut[1][t] = pat[sh][1];
-    }
-}
+#define set_tex_light(l) (tl_lut = (const u8 (*)[16])tex_luts[(l) >> 3])
 
 /* rows y1..y2 of a wall piece: texture t, top row at height vtop above the
  * eye; u is the texture column in units, vstep units per row (16.16) */
@@ -269,7 +271,7 @@ static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u
     tl_col = t->texels + ((((u >> t->shift) & ((1 << t->wbits) - 1))) << t->hbits);
     tl_hmask = (u8)((1 << t->hbits) - 1);
     tl_step = (u16)(step >> 8);
-    tl_v = (u16)(((((s32)vtop << 16) >> t->shift) + (y1 - CENTERY) * step - (step >> 1)) >> 8);
+    tl_v = (u16)((((s32)vtop << 8) >> t->shift) + MUL16(y1 - CENTERY, tl_step) - (tl_step >> 1));
     tline(x, y1, y2);
 }
 
@@ -871,10 +873,10 @@ static void draw_weapon(void)
     boby = (s16)((MUL16(fcos(gametic * 1024), (s16)(player.bob >> 12)) >> 18) & 7);
     /* a cell is f/2 screen pixels: f/4 columns (f/8 in low detail) and
      * f/2 rows */
-    x = vieww / 2 - ((cw * f) >> (3 + low_detail)) + (bobx >> low_detail);
+    x = vieww / 2 - ((cw * f) >> (low_detail ? 4 : 3)) + (low_detail ? bobx >> 1 : bobx);
     y0 = VIEWH - (ch * f) / 2 + 2 + boby;
     {
-        s16 ncols = (s16)((cw * f) >> (2 + low_detail));
+        s16 ncols = (s16)((cw * f) >> (low_detail ? 3 : 2));
         if (ncols < 1) ncols = 1;
         draw_cells(sil, x, x + ncols - 1, 0, ((s32)cw << 16) / ncols, (s32)y0 << 16,
                    (s32)f << 15, NULL, NULL, lvl.sectors[player.mo->ss->sector].light, 0);
@@ -901,6 +903,12 @@ void render_init(void)
         s16 d = 112 + i * 8;
         dimtab[i] = (u8)(d > 255 ? 255 : d);
     }
+    for (s = 0; s < 32; s++)
+        for (i = 0; i < 16; i++) {
+            u8 sh = shadelut[(u8)((i * 17 * (s * 8 + 4)) >> 8)];
+            tex_luts[s][0][i] = pat[sh][0];
+            tex_luts[s][1][i] = pat[sh][1];
+        }
 }
 
 void render_view(void)
@@ -917,8 +925,8 @@ void render_view(void)
     viewz = (s16)(player.viewz >> 16);
     vcos = fcos(pm->angle);
     vsin = fsin(pm->angle);
-    vieww = VIEWW >> low_detail;
-    colbits = (u8)(5 + low_detail);
+    vieww = low_detail ? VIEWW / 2 : VIEWW;
+    colbits = low_detail ? 6 : 5;
     for (i = 0; i < VIEWW; i++) {
         ceilclip[i] = -1;
         floorclip[i] = VIEWH;

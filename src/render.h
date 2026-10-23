@@ -14,7 +14,7 @@
 extern u8 fb[SCREENH * ROWBYTES];
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
 extern u8 show_textures;        /* walls: 0 flat, 1 textured, 2 textured near (the title menu) */
-extern u8 low_detail;           /* 40 columns of 4 pixels (the title menu) */
+extern u8 low_detail;           /* 1: 40 columns of 4 pixels, 2: and 2 rows a texel (the title menu) */
 
 /* data the renderer uses most goes into the H8S's fast on-chip RAM
  * (cybiko/link.ld); it is set up at run time, never initialised */

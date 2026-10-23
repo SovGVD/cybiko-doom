@@ -585,19 +585,26 @@ def convert_map(wad, name, ttones, ftones, class_of, textures):
     parts.append((len(reject), bytes(reject)))
     # textures: per texture u8 log2 width, u8 log2 height (in texels), u8
     # log2 of the pixels per texel, u8 0, u32 offset of its texels from the
-    # start of this part; texels column by column
+    # start of this part; texels column by column. The part and each
+    # texture's texels are at 64-byte boundaries, so every column (at most
+    # 64 texels) is aligned to its own size: the game's column loop then
+    # steps through it by setting the low address bits.
     tl = sorted(texids, key=texids.get)
     tdir, tdata = b"", b""
+    tbase = -(-8 * len(tl) // 64) * 64
     for n in tl:
         lw, lh, sh, px = textures.get(n)
-        tdir += struct.pack(">BBBBI", lw, lh, sh, 0, 8 * len(tl) + len(tdata))
+        while len(tdata) % 64:
+            tdata += b"\0"
+        tdir += struct.pack(">BBBBI", lw, lh, sh, 0, tbase + len(tdata))
         tdata += px
-    parts.append((len(tl), tdir + tdata))
+    parts.append((len(tl), tdir.ljust(tbase, b"\0") + tdata))
     head_size = 4 + 6 * len(parts)
     head = bytearray(name.encode("latin-1")[:4].ljust(4, b"\0"))
     body = bytearray()
-    for count, blob in parts:
-        while len(body) % 4:
+    for k, (count, blob) in enumerate(parts):
+        align = 64 if k == len(parts) - 1 else 4        # the textures
+        while (head_size + len(body)) % align:
             body.append(0)
         head += struct.pack(">HI", count & 0xffff, head_size + len(body))
         body += blob

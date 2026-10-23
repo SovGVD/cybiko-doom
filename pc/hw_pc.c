@@ -142,6 +142,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--shots") && i + 1 < argc) shotdir = argv[++i];
         else if (!strcmp(argv[i], "--flat")) show_textures = 0;
         else if (!strcmp(argv[i], "--low")) low_detail = 1;
+        else if (!strcmp(argv[i], "--lowest")) low_detail = 2;
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             FILE *s = fopen(argv[++i], "r");
             char line[256], keys[64];

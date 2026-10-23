@@ -5,6 +5,7 @@
 #include "hw.h"
 
 static u8 show_fps = 1, always_run;
+static u8 detail = 3;           /* 0 high, 1 low, 2 lowest, 3 auto (title menu) */
 static u16 fps10;               /* frames a second, times ten */
 
 static const char *const skills[5] = {
@@ -173,7 +174,7 @@ static int title(int *map)
         draw_text(70, 61, show_textures == 1 ? "TEXTURED" : show_textures ? "TEXTURED NEAR" : "FLAT (FASTEST)", 6);
         draw_text(10, 68, sel == 5 ? ">" : " ", 6);
         draw_text(18, 68, "DETAIL", 6);
-        draw_text(70, 68, low_detail ? "LOW (FASTER)" : "HIGH", 6);
+        draw_text(70, 68, detail == 3 ? "AUTO" : detail == 2 ? "LOWEST" : detail ? "LOW" : "HIGH", 6);
         center_text(80, "ENTER: PLAY   ESC: QUIT", 4);
         center_text(89, "HELP KEY: FPS ON/OFF", 4);
         hw_present();
@@ -189,7 +190,7 @@ static int title(int *map)
             if (sel == 2) always_run ^= 1;
             if (sel == 3) show_weapon ^= 1;
             if (sel == 4) show_textures = (u8)((show_textures + (d < 0 ? 2 : 1)) % 3);
-            if (sel == 5) low_detail ^= 1;
+            if (sel == 5) detail = (u8)((detail + (d < 0 ? 3 : 1)) % 4);
         }
         if (k & K_FPS) show_fps ^= 1;
     }
@@ -316,6 +317,7 @@ static void play(int map)
     u8 automap = 0;
     player_reset(0);
     start_level(map);
+    low_detail = detail == 3 ? 0 : detail;
     last = fpsstart = hw_clock();
     wait_release();
     for (;;) {
@@ -378,6 +380,14 @@ static void play(int map)
         if (render_hud()) hw_present();
         else hw_present_rows(VIEWH);
         frames++;
+        if (detail == 3 && !automap) {
+            /* auto detail: low when a frame takes over 1/15 s, high again
+             * under 1/24 s (the frame time is the time since this frame's
+             * tics were run) */
+            u32 took = hw_clock() - now;
+            if (took > HW_HZ / 15) low_detail = 1;
+            else if (took < HW_HZ / 24) low_detail = 0;
+        }
         if (now - fpsstart >= HW_HZ) {
             fps10 = (u16)((frames * 10 * HW_HZ) / (now - fpsstart));
             frames = 0;

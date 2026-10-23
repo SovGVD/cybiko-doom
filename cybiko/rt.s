@@ -308,11 +308,15 @@ _vline_img:
 9:      rts
 
 ; void tline(s16 x, s16 y1, s16 y2): a textured column (render.c has it in
-; C too): rows y1..y2 of column x (of 80, or 40 in low detail) from the texels at tl_col, texel
-; (tl_v >> 8) & tl_hmask, tl_v += tl_step a row; tex_lut[row & 1][texel] is
-; the dither byte.
-;   er2 texels, er3 tex_lut, r1h row parity (0 / 16), er4 screen byte,
-;   r5h kept bits, r5l ours, e5 rows left, r6 v, e6 step, r1l hmask
+; C too): rows y1..y2 of column x (of 80, or 40 in low detail) from the
+; texels at tl_col, texel (tl_v >> 8) & tl_hmask, tl_v += tl_step a row;
+; tl_lut[row & 1][texel] is the dither byte. A texture column is aligned
+; to its size (level.c) and the luts to 32 bytes, so a texel's address is
+; the column's with the low bits set, and a dither byte's is the lut's
+; with the low byte set (parity | texel).
+;   er2 column, er3 lut, r1h the lut's low byte | parity (0 / 16),
+;   r1l hmask, er4 screen byte, r5h kept bits, r5l ours, r6 v, e6 step,
+;   e5 rows left, r0l texel index, r0h texel / dither byte
         .global _tline_img
 _tline_img:
         cmp.w   r1,r2
@@ -327,47 +331,97 @@ _tline_img:
         mov.w   #40,r4
         mulxu.w r4,er3
         mov.w   r0,r4
-        mov.b   @_low_detail:32,r5h     ; low detail: column x is byte x
+        mov.b   @_low_detail:32,r5h
         bne     4f
         shar.w  r4
 4:      exts.l  er4
         add.l   er3,er4
         add.l   #_fb,er4
+        mov.l   @_tl_lut:32,er3
+        mov.b   r3l,r1h                 ; low byte of the lut
+        btst    #0,r1l
+        beq     2f
+        or.b    #16,r1h                 ; odd first row
+2:      mov.w   @_tl_v:32,r6
+        mov.w   @_tl_step:32,e6
+        mov.l   @_tl_col:32,er2
+        mov.b   @_tl_hmask:32,r1l
         mov.b   r5h,r5h
-        beq     5f
-        sub.b   r5h,r5h
-        bra     1f
-5:      mov.b   #0x0f,r5h
+        beq     7f
+        cmp.b   #2,r5h
+        beq     9f
+; low detail: a column is a whole byte, two rows an iteration
+5:      mov.b   r6h,r0l
+        and.b   r1l,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0h
+        xor.b   r0l,r2l
+        or.b    r1h,r0h
+        mov.b   r0h,r3l
+        mov.b   @er3,r0h
+        mov.b   r0h,@er4
+        add.w   e6,r6
+        dec.w   #1,e5
+        beq     8f
+        mov.b   r6h,r0l
+        and.b   r1l,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0h
+        xor.b   r0l,r2l
+        or.b    r1h,r0h
+        xor.b   #16,r0h
+        mov.b   r0h,r3l
+        mov.b   @er3,r0h
+        mov.b   r0h,@(40,er4)
+        add.w   #80,r4
+        add.w   e6,r6
+        dec.w   #1,e5
+        bne     5b
+8:      ldm.l   @er7+,er4-er6
+        rts
+; lowest detail: one texel for two rows
+9:      add.w   e6,e6
+6:      mov.b   r6h,r0l
+        and.b   r1l,r0l
+        or.b    r0l,r2l
+        mov.b   @er2,r0h
+        xor.b   r0l,r2l
+        or.b    r1h,r0h
+        mov.b   r0h,r3l
+        mov.b   @er3,r0h
+        mov.b   r0h,@er4
+        dec.w   #1,e5
+        beq     8b
+        xor.b   #16,r3l
+        mov.b   @er3,r0h
+        mov.b   r0h,@(40,er4)
+        add.w   #80,r4
+        add.w   e6,r6
+        dec.w   #1,e5
+        bne     6b
+        ldm.l   @er7+,er4-er6
+        rts
+; high detail: a column is half a byte
+7:      mov.b   #0x0f,r5h
         btst    #0,r0l
         beq     1f
         mov.b   #0xf0,r5h
 1:      mov.b   r5h,r5l
         not.b   r5l
-        mov.l   #_tex_lut,er3
-        sub.b   r1h,r1h
-        btst    #0,r1l
-        beq     2f
-        mov.b   #16,r1h
-2:      mov.w   @_tl_v:32,r6
-        mov.w   @_tl_step:32,e6
-        mov.l   @_tl_col:32,er2
-        mov.b   @_tl_hmask:32,r1l
-3:      sub.l   er0,er0
-        mov.b   r6h,r0l
+3:      mov.b   r6h,r0l
         and.b   r1l,r0l
-        add.l   er2,er0
-        mov.b   @er0,r0l
-        or.b    r1h,r0l
-        extu.w  r0
-        extu.l  er0
-        add.l   er3,er0
-        mov.b   @er0,r0l
-        and.b   r5l,r0l
-        mov.b   @er4,r0h
-        and.b   r5h,r0h
-        or.b    r0h,r0l
-        mov.b   r0l,@er4
-        add.l   #40,er4
+        or.b    r0l,r2l
+        mov.b   @er2,r0h
+        xor.b   r0l,r2l
+        or.b    r1h,r0h
+        mov.b   r0h,r3l
+        mov.b   @er3,r0h
+        and.b   r5l,r0h
+        mov.b   @er4,r0l
+        and.b   r5h,r0l
+        or.b    r0l,r0h
+        mov.b   r0h,@er4
+        add.w   #40,r4
         xor.b   #16,r1h
         add.w   e6,r6
         dec.w   #1,e5

@@ -93,8 +93,10 @@ int pack_open(void)
         present[npresent++] = (u8)i;
         if (rd32(e + 12) > room) room = rd32(e + 12);
     }
-    mapbuf = room ? hw_alloc(room) : NULL;
+    /* at a 64-byte boundary: the wall textures are aligned in the map */
+    mapbuf = room ? hw_alloc(room + 64) : NULL;
     if (!mapbuf) npresent = 0;
+    else mapbuf += (u8)(0 - (unsigned long)mapbuf) & 63;
     return 1;
 }
 

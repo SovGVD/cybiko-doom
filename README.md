@@ -27,19 +27,27 @@ The title menu trades looks for speed before a game starts:
 
 - WALLS: TEXTURED, TEXTURED NEAR (walls further than 512 units are flat
   shades) or FLAT;
-- DETAIL: HIGH (80 columns) or LOW (40 columns of 4 pixels);
+- DETAIL: HIGH (80 columns), LOW (40 columns of 4 pixels), LOWEST (also
+  one texel for two rows) or AUTO, the default: low detail only while a
+  frame takes longer than 1/15 s, high again under 1/24 s, so open areas
+  turn blocky and corridors stay sharp;
 - WEAPON: SHOWN or HIDDEN (a little faster).
 
 Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 
 | | start room | widest view (courtyard) | corridors |
 | --- | --- | --- | --- |
-| textured, high detail | 11-14 | 10-11 | 26-32 |
+| textured, high detail | 12-14 | 10 | 26-33 |
+| textured, auto detail | 17-20 | 14-17 | 26-33 |
 | textured near, high detail | 13-15 | 11 | 26-32 |
 | flat, high detail | 14-19 | 11-15 | 35 |
-| textured, low detail | 17-21 | 13-17 | 35 |
+| textured, low detail | 17-22 | 14-19 | 35 |
 | textured near, low detail | 19-23 | 15-18 | 35 |
 | flat, low detail | 19-27 | 15-23 | 35 |
+
+LOWEST is no faster than LOW: with 40 columns the time goes to the
+per-column setup, the BSP walk, the sprites and the copy to the LCD rather
+than to filling the columns.
 
 The texture size changes only the pack's size, not the speed.
 
@@ -125,8 +133,14 @@ sprites from a Doom IWAD you supply into the app:
   it resets the watchdog itself and gives CyOS its interrupts back on exit.
 - The H8S's 8 KB of on-chip RAM takes one state an access against the
   DRAM's three, so while the game runs it holds the screen buffer, the stack,
-  the renderer's hot tables and its fill loops (`cybiko/link.ld`); CyOS's
-  contents are kept aside and put back on exit, and the DTC is off meanwhile.
+  the renderer's hot tables (among them the texture dither bytes for all
+  32 lights, 1 KB) and its fill loops (`cybiko/link.ld`); CyOS's contents
+  are kept aside and put back on exit, and the DTC is off meanwhile.
+- The textured column loop (`tline` in `rt.s`) avoids address arithmetic:
+  a texture column is aligned to its own size in the map (`wad2cy.py`
+  pads them, `level.c` aligns the map buffer to 64 bytes) and the dither
+  tables to 32 bytes, so a texel or a dither byte is reached by setting
+  the low bits of an address.
 - The pack is read with CyOS's own file functions (`FileInput`,
   `Input_read`; `cybiko/cyos.ld` has their export numbers from the Cybiko
   SDK). The app imports them like CyOS's own applications do:
