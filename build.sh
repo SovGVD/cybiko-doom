@@ -8,15 +8,15 @@
 #         (Freedoom's does; the shareware one only allows passing on the
 #         unmodified shareware package).
 #   MAPS  comma-separated maps to put in the pack (default: all of them).
-#         The shareware episode's 9 maps make an 815 KB pack, which fits
+#         The shareware episode's 9 maps make a 760 KB pack, which fits
 #         the MP3 cartridge's card; the Cybiko's own storage holds only a
-#         few maps (each is 55-135 KB).
+#         few maps (about 40 KB of sprites plus 45-125 KB a map).
 #
 # Needs Python 3 and the GNU H8 tools (Debian/Ubuntu: binutils-h8300-hms
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
 # Games. TEXELS=8 or 32 sets the most texels along a wall texture's longer
-# side (default 16; 8 makes the pack about 10% smaller, 32 about 20%
-# bigger). The results are build/doom.app, the game, and build/doom.dat, the
+# side (default 16; 8 makes the pack about 5% smaller, 32 about 20%
+# bigger); TEXELS=0 leaves the textures out (flat walls only). The results are build/doom.app, the game, and build/doom.dat, the
 # pack: see README.md for where they go.
 set -e
 cd "$(dirname "$0")"

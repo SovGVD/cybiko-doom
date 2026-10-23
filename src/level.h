@@ -17,7 +17,6 @@ typedef struct sector_s {
     s16 tag;
     u8 floortone, ceiltone;     /* brightness of the flats, ceiltone 0 = sky */
     u8 liquid;                  /* nukage, water, lava: drawn darker */
-    u8 floorflat, ceilflat;     /* flats (lvl.flat), NOTEX = none or sky */
     u8 soundtraversed;          /* monsters hear the player through here */
     struct mobj_s *soundtarget;
     void *mover;                /* the door/lift/floor moving it, if any */
@@ -42,11 +41,6 @@ typedef struct {
     u8 wbits, hbits;            /* log2 of the texel counts */
     u8 shift;                   /* log2 of the pixels (map units) per texel */
 } texture_t;
-
-/* a floor or ceiling flat, shrunk the same way, row by row */
-typedef struct {
-    const u8 *texels;           /* 16x16, at a 256-byte boundary */
-} flat_t;
 
 #define ML_BLOCKING 1
 #define ML_BLOCKMONSTERS 2
@@ -124,8 +118,6 @@ typedef struct {
     s16 nreject;
     texture_t *tex;
     s16 ntex;
-    flat_t *flat;
-    s16 nflat;
 } level_t;
 
 extern level_t lvl;
