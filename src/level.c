@@ -2,16 +2,19 @@
 #include "level.h"
 #include "game.h"
 #include "hw.h"
+#include "inflate.h"
 
 level_t lvl;
 u16 validcount = 1;
-/* The level pack (tools/wad2cy.py) is a file, read with hw_pack_read: its
- * header, map list and sprites stay in memory, and each map is read when
- * it is played. */
+/* The level pack (tools/wad2cy.py) is doom.dat, with the map list and the
+ * sprites, and a file per map (doom_e1m1.dat, ...), all packed with Deflate
+ * (inflate.c). doom.dat stays in memory; a map is read and unpacked when
+ * it is played. Maps whose files are missing are left out. */
 static u8 *pack;                /* header and tables */
-static u8 *sprites;             /* the sprites, from pack offset spr_start */
+static u8 *sprites;             /* the sprites, unpacked */
 static u8 *mapbuf;              /* the map being played (lvl.reject points in) */
-static u32 spr_start, pack_size;
+static u8 present[64];          /* the maps found, as indexes in the map list */
+static u8 npresent;
 
 #define ARENA_SIZE (200L * 1024)
 static u8 arena[ARENA_SIZE];
@@ -31,52 +34,74 @@ static void *alloc(u32 n)
 static u16 rd16(const u8 *p) { return (u16)(p[0] << 8 | p[1]); }
 static u32 rd32(const u8 *p) { return (u32)rd16(p) << 16 | rd16(p + 2); }
 
-/* PACK: "CYDM", u16 version (3), u16 maps, u16 sprite slots, u16 0,
- * u32 start of the sprites, u32 pack size, then per map 4 name bytes and
- * u32 offset, then u32 offset of each sprite (0: none). The maps come
- * first, the sprites last. Offsets are from the pack start. */
-#define PACK_HEAD 20
-#define MAP_ENTRY(i) (pack + PACK_HEAD + 8 * (i))
+/* doom.dat: "CYDM", u16 version (4), u16 maps, u16 sprite slots, u16 0,
+ * then the sprites' packed size, unpacked size and room (u32 each: the
+ * buffer that unpacks them in place), then per map 4 name bytes and its
+ * unpacked size, packed size and room (u32 each), then per sprite slot the
+ * u32 offset of its sprite in the unpacked sprites (0xffffffff: none),
+ * then the packed sprites. A map's file is its 4 name bytes, then the map
+ * packed. */
+#define PACK_HEAD 24
+#define MAP_ENTRY(i) (pack + PACK_HEAD + 16 * (i))
 
-int level_count(void) { return pack ? rd16(pack + 6) : 0; }
+int level_count(void) { return npresent; }
 
-static u32 map_offset(int i) { return rd32(MAP_ENTRY(i) + 4); }
-
-static u32 map_size(int i)
+/* a map's file name: doom_e1m1.dat */
+static const char *map_file(const u8 *e)
 {
-    return (i + 1 < level_count() ? map_offset(i + 1) : spr_start) - map_offset(i);
+    static char name[16];
+    int k, n = 0;
+    const char *pre = "doom_", *ext = ".dat";
+    for (k = 0; pre[k]; k++) name[n++] = pre[k];
+    for (k = 0; k < 4 && e[k]; k++) {
+        char c = (char)e[k];
+        name[n++] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    }
+    for (k = 0; ext[k]; k++) name[n++] = ext[k];
+    name[n] = 0;
+    return name;
 }
 
 int pack_open(void)
 {
     u8 head[PACK_HEAD], *p;
-    u32 table, n, biggest = 0;
-    int i;
+    u32 table, spacked, sraw, sroom, room = 0;
+    int i, maps;
     pack = NULL;
-    if (!hw_pack_read(0, head, PACK_HEAD)) return 0;
-    if (head[0] != 'C' || head[1] != 'Y' || head[2] != 'D' || head[3] != 'M' || rd16(head + 4) != 3)
+    npresent = 0;
+    if (!hw_file_read("doom.dat", 0, head, PACK_HEAD)) return 0;
+    if (head[0] != 'C' || head[1] != 'Y' || head[2] != 'D' || head[3] != 'M' || rd16(head + 4) != 4)
         return 0;
-    table = PACK_HEAD + 8L * rd16(head + 6) + 4L * rd16(head + 8);
-    spr_start = rd32(head + 12);
-    pack_size = rd32(head + 16);
-    p = hw_alloc(table + pack_size - spr_start);
-    if (!p || !hw_pack_read(0, p, table) || !hw_pack_read(spr_start, p + table, pack_size - spr_start))
+    maps = rd16(head + 6);
+    table = PACK_HEAD + 16L * maps + 4L * rd16(head + 8);
+    spacked = rd32(head + 12);
+    sraw = rd32(head + 16);
+    sroom = rd32(head + 20);
+    p = hw_alloc(table + sroom);
+    if (!p || !hw_file_read("doom.dat", 0, p, table)
+        || !hw_file_read("doom.dat", table, p + table + sroom - spacked, spacked)
+        || !inflate(p + table, sraw, p + table + sroom - spacked, spacked))
         return 0;
     pack = p;
     sprites = p + table;
-    for (i = 0; i < level_count(); i++) {
-        n = map_size(i);
-        if (n > biggest) biggest = n;
+    for (i = 0; i < maps && npresent < sizeof present; i++) {
+        const u8 *e = MAP_ENTRY(i);
+        u8 name[4];
+        if (!hw_file_read(map_file(e), 0, name, 4)
+            || name[0] != e[0] || name[1] != e[1] || name[2] != e[2] || name[3] != e[3])
+            continue;
+        present[npresent++] = (u8)i;
+        if (rd32(e + 12) > room) room = rd32(e + 12);
     }
-    mapbuf = hw_alloc(biggest);
-    if (!mapbuf) pack = NULL;
-    return pack != NULL;
+    mapbuf = room ? hw_alloc(room) : NULL;
+    if (!mapbuf) npresent = 0;
+    return 1;
 }
 
 const char *level_name(int i)
 {
     static char name[5];
-    const u8 *m = MAP_ENTRY(i);
+    const u8 *m = MAP_ENTRY(present[i]);
     int k;
     for (k = 0; k < 4; k++) name[k] = (char)m[k];
     name[4] = 0;
@@ -99,8 +124,8 @@ const u8 *sprite_get(int cls, int frame)
     int slot = cls * 5 + frame;
     u32 off;
     if (!pack || slot >= rd16(pack + 8)) return NULL;
-    off = rd32(MAP_ENTRY(level_count()) + 4 * slot);
-    return off ? sprites + (off - spr_start) : NULL;
+    off = rd32(pack + PACK_HEAD + 16L * rd16(pack + 6) + 4 * slot);
+    return off != 0xffffffffUL ? sprites + off : NULL;
 }
 
 /* a map part: count and data */
@@ -116,7 +141,13 @@ int level_load(int idx)
     s16 i, n;
     int k;
 
-    if (!hw_pack_read(map_offset(idx), mapbuf, map_size(idx))) return 0;
+    {
+        const u8 *e = MAP_ENTRY(present[idx]);
+        u32 raw = rd32(e + 4), packed = rd32(e + 8), room = rd32(e + 12);
+        if (!hw_file_read(map_file(e), 4, mapbuf + room - packed, packed)
+            || !inflate(mapbuf, raw, mapbuf + room - packed, packed))
+            return 0;
+    }
     arena_used = 0;
     mset(&lvl, 0, sizeof lvl);
     for (k = 0; k < 4; k++) lvl.name[k] = (char)m[k];

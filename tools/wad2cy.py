@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Turn the maps of a Doom IWAD into the level pack Cybiko Doom plays.
 
-    wad2cy.py doom1.wad doom.dat [--maps E1M1,E1M2] [--list]
+    wad2cy.py doom1.wad OUTDIR [--maps E1M1,E1M2] [--texels N] [--list]
 
 No WAD data is kept in this repository. You give the converter your own WAD
 (the shareware doom1.wad, the registered doom.wad or Ultimate Doom, or
-Freedoom's freedoom1.wad) and it writes the pack file, doom.dat, with
-everything the game needs from it:
+Freedoom's freedoom1.wad) and it writes the level pack into OUTDIR:
+doom.dat, with the sprites and the map list, and a file per map,
+doom_e1m1.dat and so on. Together they hold everything the game needs:
 
   * the map geometry: vertexes, sectors, sides, lines, segs, subsectors,
     BSP nodes, things, the blockmap and the reject table;
@@ -15,17 +16,20 @@ everything the game needs from it:
   * the monster, item and weapon sprites shrunk to at most 32x32 cells of
     16 grey tones, with their outline marked.
 
-The pack is big-endian (as the H8S is) and starts with a directory, see
-PACK FORMAT below and src/level.c, which must agree with it. The game reads
-it from the MP3 cartridge's card or the Cybiko's own storage, one map at a
-time.
+The pack is big-endian (as the H8S is) and packed with Deflate (zlib; the
+game has its own decoder, src/inflate.c); see PACK FORMAT below and
+src/level.c, which must agree with it. The game reads it from the MP3
+cartridge's card or the Cybiko's own storage, one map at a time, and plays
+the maps whose files it finds.
 
 Python 3, no extra packages.
 """
 import argparse
 import math
+import os
 import struct
 import sys
+import zlib
 
 # ---------------------------------------------------------------------------
 # WAD access
@@ -619,7 +623,7 @@ def all_maps(wad):
 def main():
     p = argparse.ArgumentParser(description="Convert Doom maps for Cybiko Doom")
     p.add_argument("wad")
-    p.add_argument("out", nargs="?")
+    p.add_argument("out", nargs="?", help="folder for doom.dat and the map files")
     p.add_argument("--maps", help="comma-separated map names (default: all)")
     p.add_argument("--texels", type=int, default=16,
                    help="texels along a texture's longer side, at most (default 16; "
@@ -675,32 +679,66 @@ def main():
     if missing:
         print("sprites not in this WAD (drawn as boxes): " + " ".join(sorted(set(missing))))
 
-    # PACK FORMAT: "CYDM", u16 version, u16 map count, u16 sprite slots,
-    # u16 0, u32 start of the sprites, u32 pack size, then per map its 4
-    # name bytes and u32 offset, then u32 offset of each sprite (0 = none),
-    # then the maps and last the sprites. Offsets are from the pack start.
-    table_size = 20 + 8 * len(blobs) + 4 * len(sil)
-    body = bytearray()
+    # PACK FORMAT. doom.dat: "CYDM", u16 version (4), u16 map count, u16
+    # sprite slots, u16 0, then the sprites' packed size, unpacked size and
+    # room (u32 each), then per map its 4 name bytes and its unpacked size,
+    # packed size and room (u32 each), then per sprite slot the u32 offset
+    # of its sprite in the unpacked sprites (0xffffffff = none), then the
+    # sprites packed. A map's file, doom_<name>.dat: its 4 name bytes, then
+    # the map packed. "Packed" is raw Deflate; "room" is the buffer the game
+    # unpacks it in, with the packed data at its end.
+    os.makedirs(a.out, exist_ok=True)
     entries = b""
+    total = 0
     for b in blobs:
-        while len(body) % 4:
-            body.append(0)
-        entries += b[:4] + struct.pack(">I", table_size + len(body))
-        body += b
-    spr_start = table_size + len(body)
+        packed, room = deflate(b)
+        entries += b[:4] + struct.pack(">III", len(b), len(packed), room)
+        fn = os.path.join(a.out, map_file(b[:4]))
+        open(fn, "wb").write(b[:4] + packed)
+        total += 4 + len(packed)
+        print("%s: %d bytes (%d unpacked)" % (fn, 4 + len(packed), len(b)))
+    spr = bytearray()
     soffs = b""
     for s in sil:
         if not s:
-            soffs += struct.pack(">I", 0)
+            soffs += struct.pack(">I", 0xffffffff)
             continue
-        soffs += struct.pack(">I", table_size + len(body))
-        body += s
-    head = b"CYDM" + struct.pack(">HHHHII", 3, len(blobs), len(sil), 0, spr_start,
-                                 table_size + len(body))
-    pack = head + entries + soffs + bytes(body)
-    open(a.out, "wb").write(pack)
-    print("%s: %d bytes, %d maps" % (a.out, len(pack), len(blobs)))
+        while len(spr) % 2:
+            spr.append(0)
+        soffs += struct.pack(">I", len(spr))
+        spr += s
+    packed, room = deflate(bytes(spr))
+    head = b"CYDM" + struct.pack(">HHHHIII", 4, len(blobs), len(sil), 0, len(packed), len(spr), room)
+    pack = head + entries + soffs + packed
+    fn = os.path.join(a.out, "doom.dat")
+    open(fn, "wb").write(pack)
+    total += len(pack)
+    print("%s: %d bytes (sprites %d unpacked); %d maps, %d bytes in all"
+          % (fn, len(pack), len(spr), len(blobs), total))
 
+
+def map_file(name):
+    """doom_e1m1.dat (src/level.c makes the same name)."""
+    return "doom_" + name.rstrip(b"\0").decode("latin-1").lower() + ".dat"
+
+
+def deflate(data):
+    """(raw Deflate data, room): room is the size of a buffer in which the
+    game can unpack it in place, the packed data at its end. The decoder
+    writes byte w only after reading the input that zlib needs for it, so
+    the packed data must start at least max(out(k) - k) bytes in, where
+    out(k) is what zlib gives from its first k bytes."""
+    c = zlib.compressobj(9, zlib.DEFLATED, -15, 9)
+    packed = c.compress(data) + c.flush()
+    d = zlib.decompressobj(-15)
+    out = ahead = 0
+    for k in range(len(packed)):
+        out += len(d.decompress(packed[k:k + 1]))
+        ahead = max(ahead, out - (k + 1))
+    out += len(d.flush())
+    assert out == len(data)
+    room = max(len(data), len(packed) + ahead + 8)
+    return packed, (room + 3) & ~3
 
 if __name__ == "__main__":
     main()

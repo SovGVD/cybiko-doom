@@ -44,26 +44,29 @@ Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
     TEXELS=8 ./build.sh doom1.wad           # coarser wall textures, smaller pack
     TEXELS=0 ./build.sh doom1.wad E1M1      # no textures: the smallest pack
 
-This makes two files:
+This makes:
 
-- `build/doom.app`, the game (about 55 KB). Put it on the Cybiko with the
+- `build/doom.app`, the game (about 57 KB). Put it on the Cybiko with the
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
-- `build/doom.dat`, the level pack: the maps with their shrunk wall
-  textures, and the shrunk sprites. The
-  game looks for it on the MP3 cartridge's card first (`/MP3/doom.dat`, the
-  card's top folder; on Dragonfruit that is `/Cybiko/card/doom.dat` on the
-  SD card) and then in the Cybiko's own storage (next to the app). The
-  shareware episode makes a 760 KB pack (715 KB with `TEXELS=8`, 925 KB
-  with `TEXELS=32`), which wants the card. The Cybiko's own storage holds
-  the app and a few maps: the pack is about 40 KB of sprites plus 45-125 KB
-  a map (E1M1: 87 KB, 82 KB with `TEXELS=0`), so pick the maps with the
-  second argument there. The app and E1M1 take about 140 KB.
+- `build/pack/`, the level pack: `doom.dat` (about 19 KB: the map list and
+  the shrunk sprites) and a file per map, `doom_e1m1.dat` and so on
+  (20-56 KB each in the shareware episode: the map with its shrunk wall
+  textures). All of it is packed with Deflate. The game looks for each
+  file on the MP3 cartridge's card first (`/MP3/`, the card's top folder;
+  on Dragonfruit that is `/Cybiko/card/` on the SD card) and then in the
+  Cybiko's own storage (next to the app), and offers the maps whose files
+  it finds: copy over only the maps you want.
 
-The game reads the pack's sprites when it starts and each map when it is
-played. It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
-room for the biggest map in the pack (up to 125 KB in the shareware
+The shareware episode's 9 maps make 343 KB in all (331 KB with
+`TEXELS=8`, 382 KB with `TEXELS=32`, 323 KB with `TEXELS=0`). The app,
+`doom.dat` and E1M1 take about 100 KB of the Cybiko's own storage.
+
+The game unpacks the sprites when it starts and each map when it is played
+(about 3 seconds for E1M1 in the emulator, while CyOS shows its busy
+sign). It needs about 350 KB of RAM, plus the sprites (about 40 KB) and
+room for the biggest map it found unpacked (up to 125 KB in the shareware
 episode).
 
 ## The WAD and its licence
@@ -101,10 +104,11 @@ sprites from a Doom IWAD you supply into the app:
 - `cybiko/` the Cybiko side: hardware access and file reading
   (`hw_cybiko.c`), runtime and division helpers (`rt.s`), the CyOS
   functions it calls (`cyos.ld`), the link script, icon and help page.
-- `tools/wad2cy.py` converts a WAD into the level pack;
+- `tools/wad2cy.py` converts a WAD into the level pack; `src/inflate.c`
+  unpacks it;
   `tools/cybiko_mkapp.py` and `tools/cybiko_cap.py` make the CyOS `.app`.
 - `pc/` a PC build of the game code for testing: it writes frames as PGM
-  images (`make -C pc`, then `pc/doom_pc doom.dat --frames N --shots DIR`).
+  images (`make -C pc`, then `pc/doom_pc build/pack/doom.dat --frames N --shots DIR`).
 
 ## Notes on the Cybiko
 

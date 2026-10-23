@@ -3,20 +3,19 @@
 #
 #   WAD   your Doom IWAD: doom1.wad (shareware), doom.wad, or Freedoom's
 #         freedoom1.wad. Its maps and sprites are converted into the level
-#         pack, build/doom.dat; the WAD is not in this repository, and the
-#         pack should not be shared unless the WAD's licence allows it
-#         (Freedoom's does; the shareware one only allows passing on the
-#         unmodified shareware package).
+#         pack, build/pack/ (doom.dat and a file per map); the WAD is not in
+#         this repository, and the pack should not be shared unless the
+#         WAD's licence allows it (Freedoom's does; the shareware one only
+#         allows passing on the unmodified shareware package).
 #   MAPS  comma-separated maps to put in the pack (default: all of them).
-#         The shareware episode's 9 maps make a 760 KB pack, which fits
-#         the MP3 cartridge's card; the Cybiko's own storage holds only a
-#         few maps (about 40 KB of sprites plus 45-125 KB a map).
+#         The shareware episode's 9 maps make 343 KB; the game plays the
+#         maps whose files it finds, so you can also copy over only some.
 #
 # Needs Python 3 and the GNU H8 tools (Debian/Ubuntu: binutils-h8300-hms
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
 # Games. TEXELS=8 or 32 sets the most texels along a wall texture's longer
-# side (default 16; 8 makes the pack about 5% smaller, 32 about 20%
-# bigger); TEXELS=0 leaves the textures out (flat walls only). The results are build/doom.app, the game, and build/doom.dat, the
+# side (default 16); TEXELS=0 leaves the textures out (flat walls only).
+# The results are build/doom.app, the game, and build/pack/, the level
 # pack: see README.md for where they go.
 set -e
 cd "$(dirname "$0")"
@@ -28,7 +27,8 @@ mkdir -p build
 CC=h8300-hitachi-coff-gcc
 CFLAGS="-ms -O2 -fomit-frame-pointer -Wall -ffreestanding -fno-builtin"
 if [ -n "$2" ]; then MAPS="--maps $2"; else MAPS=""; fi
-python3 tools/wad2cy.py "$1" build/doom.dat $MAPS --texels "${TEXELS:-16}"
+rm -rf build/pack
+python3 tools/wad2cy.py "$1" build/pack $MAPS --texels "${TEXELS:-16}"
 objs=""
 for f in src/*.c cybiko/hw_cybiko.c; do
     o=build/$(basename "$f" .c).o

@@ -67,6 +67,11 @@ void hw_idle(void)
     REG16(WDT_TCSR) = 0x5a00;       /* watchdog counter back to 0 */
 }
 
+void hw_watchdog(void)
+{
+    REG16(WDT_TCSR) = 0x5a00;
+}
+
 void hw_init(void)
 {
     u8 i;
@@ -190,9 +195,9 @@ void hw_debug(const char *s)
     }
 }
 
-/* the level pack */
-static const char *const pack_paths[] = { "/MP3/doom.dat", "doom.dat" };
-static const char *pack_path;
+/* the level pack's files: on the MP3 card's card, then in storage */
+static const char *const pack_dirs[] = { "/MP3/", "" };
+static char pack_path[32];
 static u8 file_input[96];       /* struct FileInput: 84 bytes */
 static struct { u32 off, n; void *buf; } rd;
 
@@ -207,17 +212,26 @@ static long pack_read(void *unused)
     return r;
 }
 
-int hw_pack_read(u32 off, void *buf, u32 n)
+int hw_file_read(const char *name, u32 off, void *buf, u32 n)
 {
-    long r;
-    u32 t = hw_clock();
-    rd.off = off;
-    rd.n = n;
-    rd.buf = buf;
-    r = cyos_call(pack_read, 0);
-    clock_hi = t;               /* the time CyOS had does not count */
-    clock_last = TCNT5;
-    return r == (long)n;
+    u8 i;
+    for (i = 0; i < sizeof pack_dirs / sizeof pack_dirs[0]; i++) {
+        const char *d = pack_dirs[i];
+        u8 k = 0;
+        long r;
+        u32 t = hw_clock();
+        while (*d) pack_path[k++] = *d++;
+        for (d = name; *d && k < sizeof pack_path - 1; ) pack_path[k++] = *d++;
+        pack_path[k] = 0;
+        rd.off = off;
+        rd.n = n;
+        rd.buf = buf;
+        r = cyos_call(pack_read, 0);
+        clock_hi = t;           /* the time CyOS had does not count */
+        clock_last = TCNT5;
+        if (r == (long)n) return 1;
+    }
+    return 0;
 }
 
 #define MAX_ALLOCS 4
@@ -237,10 +251,7 @@ long main(int argc, char **argv, char start)
     (void)argc;
     (void)argv;
     if (!start) return 0;
-    for (i = 0; i < sizeof pack_paths / sizeof pack_paths[0]; i++) {
-        pack_path = pack_paths[i];
-        if (pack_open()) break;
-    }
+    pack_open();
     hw_init();
     run_on_stack(doom_main, _iram_stack_top);
     hw_shutdown();

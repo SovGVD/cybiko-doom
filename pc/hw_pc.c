@@ -95,11 +95,19 @@ void hw_idle(void)
     if (frame >= maxframes) longjmp(done, 1);
 }
 
-static FILE *packfile;
+static char packdir[512];      /* the folder of doom.dat, with its slash */
 
-int hw_pack_read(u32 off, void *buf, u32 n)
+int hw_file_read(const char *name, u32 off, void *buf, u32 n)
 {
-    return packfile && fseek(packfile, (long)off, SEEK_SET) == 0 && fread(buf, 1, n, packfile) == n;
+    char path[600];
+    FILE *f;
+    int ok;
+    snprintf(path, sizeof path, "%s%s", packdir, name);
+    f = fopen(path, "rb");
+    if (!f) return 0;
+    ok = fseek(f, (long)off, SEEK_SET) == 0 && fread(buf, 1, n, f) == n;
+    fclose(f);
+    return ok;
 }
 
 void *hw_alloc(u32 n) { return malloc(n); }
@@ -107,16 +115,26 @@ void *hw_alloc(u32 n) { return malloc(n); }
 void hw_init(void) {}
 void hw_shutdown(void) {}
 void hw_debug(const char *s) { (void)s; }
+void hw_watchdog(void) {}
 
 int main(int argc, char **argv)
 {
     int i;
     if (argc < 2) {
-        fprintf(stderr, "usage: %s doom.dat [--script F] [--frames N] [--shots DIR] [--every K]\n", argv[0]);
+        fprintf(stderr, "usage: %s DIR/doom.dat [--script F] [--frames N] [--shots DIR] [--every K]\n", argv[0]);
         return 1;
     }
-    packfile = fopen(argv[1], "rb");
-    if (!packfile) { perror(argv[1]); return 1; }
+    {
+        const char *slash = strrchr(argv[1], '/');
+        int n = slash ? (int)(slash - argv[1]) + 1 : 0;
+        if (n >= (int)sizeof packdir) return 1;
+        memcpy(packdir, argv[1], n);
+        packdir[n] = 0;
+        if (strcmp(slash ? slash + 1 : argv[1], "doom.dat")) {
+            fprintf(stderr, "%s: give the path of doom.dat (its map files go next to it)\n", argv[1]);
+            return 1;
+        }
+    }
     if (!pack_open()) { fprintf(stderr, "%s: not a Cybiko Doom pack\n", argv[1]); return 1; }
     for (i = 2; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) maxframes = atoi(argv[++i]);

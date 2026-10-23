@@ -236,7 +236,9 @@ static int next_map(int secret)
         else if (n[3] == '9') want[3] = n[1] == '1' ? '4' : n[1] == '2' ? '6' : n[1] == '3' ? '7' : '3';
         else if (n[3] == '8') return -1;
         else want[3] = (char)(n[3] + 1);
-        return level_find(want);
+        i = level_find(want);
+        if (i >= 0) return i;
+        /* its file is missing: the next map there is */
     }
     /* MAPxx */
     if (n[0] == 'M') {
@@ -295,6 +297,9 @@ static u16 buttons_from_keys(u16 k)
 
 static void start_level(int map)
 {
+    clear_screen(0);
+    center_text(46, "LOADING...", 6);
+    hw_present();
     game_start_level(map);
     hud_valid = 0;
 }
@@ -398,9 +403,9 @@ void doom_main(void)
         /* no pack: tell where it goes (see hw_cybiko.c) */
         clear_screen(6);
         draw_big_text(48, 8, "DOOM", 0);
-        center_text(36, "DOOM.DAT NOT FOUND", 1);
-        center_text(50, "PUT IT ON THE MP3 CARD", 2);
-        center_text(58, "OR ON THE CYBIKO", 2);
+        center_text(36, "NO DOOM.DAT OR NO MAPS", 1);
+        center_text(50, "PUT DOOM.DAT AND THE MAP FILES", 2);
+        center_text(58, "ON THE MP3 CARD OR THE CYBIKO", 2);
         center_text(84, "ANY KEY: QUIT", 2);
         hw_present();
         wait_key();
