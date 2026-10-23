@@ -933,6 +933,7 @@ static void draw_weapon(void)
 /* ---- frame ---- */
 
 static u8 border_dirty = 1;     /* the frame around a smaller window needs drawing */
+static u8 last_detail = 0xff;   /* low_detail of the last frame; 0xff: redraw it all */
 
 /* the view's window for view_size, and what depends on its size */
 void render_set_view(void)
@@ -961,6 +962,7 @@ void render_set_view(void)
 void render_border_dirty(void)
 {
     border_dirty = 1;
+    last_detail = 0xff;
 }
 
 static u8 border_drawn;         /* this frame, so the whole view changed */
@@ -981,6 +983,29 @@ static void render_border(void)
             for (i = 0; i < view_px0 / 4; i++) p[i] = b;
             for (i = (view_px0 + view_pw) / 4; i < ROWBYTES; i++) p[i] = b;
         }
+    }
+}
+
+/* Put the view's last picture into the layout this frame draws in: split
+ * into fb / fb2 for high detail, whole bytes in fb otherwise (fb_merge says
+ * which it is in). A frame does not always draw every pixel of the view,
+ * and what it leaves must be the last picture, not half of it. */
+static void fb_layout(void)
+{
+    s16 i, n;
+    u8 *p, *q;
+    if (!low_detail && !fb_merge) {
+        p = fb + view_py0 * ROWBYTES;
+        q = fb2 + view_py0 * ROWBYTES;
+        for (n = (s16)(view_ph * ROWBYTES), i = 0; i < n; i++) {
+            q[i] = p[i] & 0x0f;
+            p[i] &= 0xf0;
+        }
+    } else if (low_detail && fb_merge) {
+        p = fb + fb_merge_y0 * ROWBYTES;
+        q = fb2 + fb_merge_y0 * ROWBYTES;
+        for (n = (s16)((fb_merge_y1 - fb_merge_y0) * ROWBYTES), i = 0; i < n; i++) p[i] |= q[i];
+        fb_merge = 0;
     }
 }
 
@@ -1034,11 +1059,16 @@ void render_view(void)
     }
     border_drawn = 0;
     if (border_dirty) render_border();
+    fb_layout();
     clear_clips();
     nvis = 0;
     poolused = 0;
     if (lvl.nvertexes > MAXVERTS) return;
-    col_skip = interlace;
+    /* alternate columns only when the other half on the screen is from a
+     * frame like this one: after a change of detail (AUTO), the automap or
+     * a menu, the whole view is drawn */
+    col_skip = interlace && low_detail == last_detail;
+    last_detail = low_detail;
     col_par = (u8)(framecount & 1);
     render_bsp();
     for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
