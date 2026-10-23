@@ -259,20 +259,21 @@ _vline_img:
         mov.w   r2,e4
         mov.b   @(11,er7),r3l
         mov.w   r0,r1
-        mov.b   @_low_detail:32,r2h     ; low detail: column x is byte x
+        mov.b   #0xff,r2l               ; low detail: column x is byte x of fb
+        mov.b   @_low_detail:32,r2h
         bne     2f
-        shar.w  r1
+        shar.w  r1                      ; high: half of byte x/2 of fb (even x)
+        mov.b   #0xf0,r2l               ; or of fb2 (odd x), see render.c
+        btst    #0,r0l
+        beq     2f
+        mov.b   #0x0f,r2l
+        exts.l  er1
+        add.l   #_fb2,er1
+        bra     1f
 2:      exts.l  er1
         add.l   #_fb,er1
-        mov.l   er1,@_cr_col:32
-        sub.b   r2l,r2l
-        mov.b   r2h,r2h
-        bne     1f
-        mov.b   #0x0f,r2l
-        btst    #0,r0l
-        beq     1f
-        mov.b   #0xf0,r2l
-1:      mov.b   r2l,@_cr_keep:32
+1:      mov.l   er1,@_cr_col:32
+        mov.b   r2l,@_cr_mask:32
         bsr     _cr_fill:16
         pop.l   er4
 9:      rts
@@ -285,7 +286,7 @@ _vline_img:
 ; the column's with the low bits set, and a dither byte's is the lut's
 ; with the low byte set (parity | texel).
 ;   er2 column, er3 lut, r1h the lut's low byte | parity (0 / 16),
-;   r1l hmask, er4 screen byte, r5h kept bits, r5l ours, r6 v, e6 step,
+;   r1l hmask, er4 screen byte, r5l our bits of it, r6 v, e6 step,
 ;   e5 rows left, r0l texel index, r0h texel / dither byte
         .global _tline_img
 _tline_img:
@@ -304,10 +305,16 @@ _tline_img:
         mov.b   @_low_detail:32,r5h
         bne     4f
         shar.w  r4
+        btst    #0,r0l                  ; odd columns are in fb2
+        beq     4f
+        exts.l  er4
+        add.l   er3,er4
+        add.l   #_fb2,er4
+        bra     5f
 4:      exts.l  er4
         add.l   er3,er4
         add.l   #_fb,er4
-        mov.l   @_tl_lut:32,er3
+5:      mov.l   @_tl_lut:32,er3
         mov.b   r3l,r1h                 ; low byte of the lut
         btst    #0,r1l
         beq     2f
@@ -371,13 +378,11 @@ _tline_img:
         bne     6b
         ldm.l   @er7+,er4-er6
         rts
-; high detail: a column is half a byte
-7:      mov.b   #0x0f,r5h
+; high detail: a column is half a byte, the other half stays 0
+7:      mov.b   #0xf0,r5l
         btst    #0,r0l
-        beq     1f
-        mov.b   #0xf0,r5h
-1:      mov.b   r5h,r5l
-        not.b   r5l
+        beq     3f
+        mov.b   #0x0f,r5l
 3:      mov.b   r6h,r0l
         and.b   r1l,r0l
         or.b    r0l,r2l
@@ -387,9 +392,6 @@ _tline_img:
         mov.b   r0h,r3l
         mov.b   @er3,r0h
         and.b   r5l,r0h
-        mov.b   @er4,r0l
-        and.b   r5h,r0l
-        or.b    r0l,r0h
         mov.b   r0h,@er4
         add.w   #40,r4
         xor.b   #16,r1h
@@ -419,24 +421,16 @@ _cr_fill:
         mov.b   r1l,r2l
         mov.b   r1h,r1l
         mov.b   r2l,r1h
-1:      mov.b   @_cr_keep:32,r2h
-        mov.b   r2h,r2l
-        not.b   r2l
+1:      mov.b   @_cr_mask:32,r2l
         and.b   r2l,r1l
         and.b   r2l,r1h
         mov.w   e4,r3
         sub.w   r4,r3
         inc.w   #1,r3
-2:      mov.b   @er0,r2l
-        and.b   r2h,r2l
-        or.b    r1l,r2l
-        mov.b   r2l,@er0
+2:      mov.b   r1l,@er0
         dec.w   #1,r3
         beq     3f
-        mov.b   @(40,er0),r2l
-        and.b   r2h,r2l
-        or.b    r1h,r2l
-        mov.b   r2l,@(40,er0)
+        mov.b   r1h,@(40,er0)
         add.l   #80,er0
         dec.w   #1,r3
         bne     2b
@@ -445,19 +439,32 @@ _cr_fill:
 
 ; void hw_present_rows(s16 from, s16 to): rows from..to-1 of fb to the LCD
 ; (HD66421: index register at 100000, data at 100001; its row 0 is the
-; bottom one), then reset the watchdog
+; bottom one), rows fb_merge_y0..fb_merge_y1-1 or'ed with fb2 when
+; fb_merge is set (render.c), then reset the watchdog
         .global _hw_present_rows_img
 _hw_present_rows_img:
         mov.w   r1,r3
         sub.w   r0,r3                   ; rows to copy
-        ble     3f
+        ble     3f:16
+        stm.l   er4-er6,@-er7
         mov.w   #99,e3
         sub.w   r0,e3                   ; the LCD's row: the top one is 99
         mov.w   #40,r1
         mulxu.w r1,er0                  ; er0 = from * 40
+        mov.l   er0,er4
+        add.l   #_fb2,er4
         mov.l   er0,er1
         add.l   #_fb,er1
         mov.l   #0x100000,er2
+        mov.w   @_fb_merge_y1:32,r0     ; merged LCD rows: r5 .. e5
+        mov.w   #100,r5
+        sub.w   r0,r5
+        mov.w   @_fb_merge_y0:32,r0
+        mov.w   #99,e5
+        sub.w   r0,e5
+        mov.b   @_fb_merge:32,r0l
+        bne     1f
+        mov.w   #0x7fff,r5              ; none
 1:      mov.b   #2,r0h
         mov.b   r0h,@er2
         sub.b   r0h,r0h
@@ -469,7 +476,24 @@ _hw_present_rows_img:
         mov.b   #4,r0h
         mov.b   r0h,@er2
         mov.w   #10,e0
-2:      mov.w   @er1+,r0                ; a word read costs what a byte does
+        cmp.w   r5,e3
+        blt     2f
+        cmp.w   e5,e3
+        bgt     2f
+4:      mov.w   @er1+,r0                ; a word read costs what a byte does
+        mov.w   @er4+,r6
+        or.w    r6,r0
+        mov.b   r0h,@(1,er2)
+        mov.b   r0l,@(1,er2)
+        mov.w   @er1+,r0
+        mov.w   @er4+,r6
+        or.w    r6,r0
+        mov.b   r0h,@(1,er2)
+        mov.b   r0l,@(1,er2)
+        dec.w   #1,e0
+        bne     4b
+        bra     5f
+2:      mov.w   @er1+,r0
         mov.b   r0h,@(1,er2)
         mov.b   r0l,@(1,er2)
         mov.w   @er1+,r0
@@ -477,9 +501,11 @@ _hw_present_rows_img:
         mov.b   r0l,@(1,er2)
         dec.w   #1,e0
         bne     2b
-        dec.w   #1,e3
+        add.l   #40,er4
+5:      dec.w   #1,e3
         dec.w   #1,r3
-        bne     1b
+        bne     1b:16
+        ldm.l   @er7+,er4-er6
 3:      mov.w   #0x5a00,r0
         mov.w   r0,@0xffbc:16
         rts

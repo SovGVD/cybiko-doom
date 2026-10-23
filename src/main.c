@@ -15,6 +15,7 @@ static const char *const skills[5] = {
 static void clear_screen(int shade)
 {
     fill_rect(0, 0, SCREENW, SCREENH, shade);
+    fb_merge = 0;
 }
 
 static void center_text(int y, const char *s, int shade)
@@ -110,11 +111,13 @@ static void render_overlays(void)
         render_border_dirty();          /* the frame cleans it next time */
         fill_rect(0, 0, text_width(player.message) + 3, 7, 0);
         draw_text(1, 1, player.message, 6);
+        render_drawn_over(0, 0, (s16)(text_width(player.message) + 3), 7);
     }
     if (player.dead) {
         fill_rect(30, 34, 100, 15, 0);
         center_text(36, "YOU DIED", 6);
         center_text(42, "ENTER: RESTART", 6);
+        render_drawn_over(30, 34, 100, 15);
     }
 }
 
@@ -125,6 +128,7 @@ void render_automap(void)
     s16 i;
     s32 cx = player.mo->x >> FRACBITS, cy = player.mo->y >> FRACBITS;
     fill_rect(0, 0, SCREENW, VIEWH, 0);
+    fb_merge = 0;
     for (i = 0; i < lvl.nlines; i++) {
         line_t *l = &lvl.lines[i];
         vertex_t *a, *b;
@@ -284,6 +288,7 @@ static int pause_menu(void)
     center_text(34, "PAUSED", 6);
     center_text(42, "ENTER: GO ON", 6);
     center_text(48, "ESC: QUIT GAME", 6);
+    render_drawn_over(30, 30, 100, 24);
     hw_present();
     for (;;) {
         u16 k = wait_key();

@@ -12,6 +12,13 @@
 /* the screen: 100 rows of 40 bytes, four 2-bit pixels a byte, leftmost in
  * the top bits, 0 white .. 3 black; row 0 is the top */
 extern u8 fb[SCREENH * ROWBYTES];
+/* In high detail two columns share a byte of fb, so the odd columns go
+ * into fb2 instead (each buffer's other half-bytes stay 0, so no byte is
+ * read before it is written) and hw_present or's the two for rows
+ * fb_merge_y0..fb_merge_y1-1 while fb_merge is set. */
+extern u8 fb2[SCREENH * ROWBYTES];
+extern u8 fb_merge;
+extern s16 fb_merge_y0, fb_merge_y1;
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
 extern u8 show_textures;        /* walls: 0 flat, 1 textured, 2 textured near (the title menu) */
 extern u8 interlace;            /* every other column a frame (the title menu) */
@@ -41,6 +48,7 @@ void render_init(void);
 void render_set_view(void);     /* after view_size changes */
 void render_border_dirty(void); /* something was drawn over the view's frame */
 s16 render_rows_from(void);     /* the first screen row render_view changed */
+void render_drawn_over(s16 x, s16 y, s16 w, s16 h);  /* fb was drawn on over the view */
 void render_view(void);         /* the 3D view of player.mo */
 void render_automap(void);
 

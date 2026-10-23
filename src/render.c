@@ -24,7 +24,9 @@
 #include "game.h"
 #include "level.h"
 
-u8 fb[SCREENH * ROWBYTES];
+u8 fb[SCREENH * ROWBYTES], fb2[SCREENH * ROWBYTES];
+u8 fb_merge;
+s16 fb_merge_y0, fb_merge_y1;
 
 #define NEARZ 8                 /* Q1: 4 map units */
 #define MAXCOORD 23000          /* Q1 deltas past this are not drawn */
@@ -203,37 +205,35 @@ static u8 flat_shade(u8 tone, u8 light)
 }
 
 /* ---- column filling ---- */
-/* a column's byte in a row of fb and the bits of it not in the column */
-#define COLBYTE(x) (low_detail ? (x) : (x) >> 1)
-#define COLKEEP(x) (low_detail ? 0 : (x) & 1 ? 0xf0 : 0x0f)
+/* a column's byte in row 0 of fb or fb2 (render.h) and its bits of it */
+#define COLBUF(x) (low_detail ? fb + (x) : ((x) & 1 ? fb2 : fb) + ((x) >> 1))
+#define COLMASK(x) (low_detail ? 0xff : (x) & 1 ? 0x0f : 0xf0)
 void vline(s16 x, s16 y1, s16 y2, u8 shade);
 
 #ifndef __H8300S__
 void vline(s16 x, s16 y1, s16 y2, u8 shade)
 {
-    u8 *p, keep, a, b;
+    u8 *p, mask, a, b;
     s16 n;
     if (y1 > y2) return;
-    p = fb + y1 * ROWBYTES + COLBYTE(x);
-    keep = COLKEEP(x);
-    a = pat[shade][y1 & 1] & (u8)~keep;
-    b = pat[shade][(y1 & 1) ^ 1] & (u8)~keep;
+    p = COLBUF(x) + y1 * ROWBYTES;
+    mask = COLMASK(x);
+    a = pat[shade][y1 & 1] & mask;
+    b = pat[shade][(y1 & 1) ^ 1] & mask;
     n = y2 - y1 + 1;
     while (n >= 2) {
-        p[0] = (p[0] & keep) | a;
-        p[ROWBYTES] = (p[ROWBYTES] & keep) | b;
+        p[0] = a;
+        p[ROWBYTES] = b;
         p += 2 * ROWBYTES;
         n -= 2;
     }
-    if (n) p[0] = (p[0] & keep) | a;
+    if (n) p[0] = a;
 }
 #endif
 
 IRAM_FN(void, dot, (s16 x, s16 y, u8 shade))
 {
-    u8 *p = fb + y * ROWBYTES + COLBYTE(x);
-    u8 keep = COLKEEP(x);
-    *p = (*p & keep) | (pat[shade][y & 1] & (u8)~keep);
+    COLBUF(x)[y * ROWBYTES] = pat[shade][y & 1] & COLMASK(x);
 }
 
 #define EDGE 6
@@ -253,8 +253,8 @@ void tline(s16 x, s16 y1, s16 y2);
 #ifndef __H8300S__
 void tline(s16 x, s16 y1, s16 y2)
 {
-    u8 *p = fb + y1 * ROWBYTES + COLBYTE(x);
-    u8 keep = COLKEEP(x), odd = y1 & 1;
+    u8 *p = COLBUF(x) + y1 * ROWBYTES;
+    u8 mask = COLMASK(x), odd = y1 & 1;
     u16 v = tl_v;
     if (low_detail == 2) {          /* one texel for two rows */
         for (; y1 < y2; y1 += 2, p += 2 * ROWBYTES, v += 2 * tl_step) {
@@ -266,7 +266,7 @@ void tline(s16 x, s16 y1, s16 y2)
         return;
     }
     for (; y1 <= y2; y1++, p += ROWBYTES, v += tl_step) {
-        *p = (*p & keep) | (tl_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & (u8)~keep);
+        *p = tl_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & mask;
         odd ^= 1;
     }
 }
@@ -679,8 +679,8 @@ static u8 sprite_shade(u8 tone, u8 light)
 /* State for cell_run, which draws one run of sprite cells in a column; it
  * is written in assembler for the H8S (cybiko/rt.s) and uses these. */
 s16 cr_lo, cr_hi;                       /* rows that may be drawn */
-u8 *cr_col;                             /* the column's byte in row 0 of fb */
-u8 cr_keep;                             /* the bits of that byte not ours */
+u8 *cr_col;                             /* the column's byte in row 0 of fb or fb2 */
+u8 cr_mask;                             /* its bits of that byte */
 u8 cr_ebase;                            /* 64 x the outline bits that apply */
 u8 cr_tab[256] IRAM;                    /* cr_ebase + (cell & 63) -> shade */
 s16 rowtab[34] IRAM;                    /* screen row where cell row r starts */
@@ -695,7 +695,7 @@ void cell_run(const u8 *c, s16 r, s16 e)
 {
     const s16 *rt = rowtab + r;
     s16 sa = 0, sb = -1, n = e - r;
-    s16 x = (s16)(low_detail ? cr_col - fb : (cr_col - fb) * 2 + (cr_keep == 0xf0));
+    s16 x = (s16)(low_detail ? cr_col - fb : cr_mask == 0x0f ? (cr_col - fb2) * 2 + 1 : (cr_col - fb) * 2);
     u8 ssh = 0;
     for (; n; n--, c++, rt++) {
         s16 ya = rt[0], yb = rt[1] - 1;
@@ -762,8 +762,8 @@ IRAM_FN(void, draw_cells, (const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, 
             if (cr_hi > viewbot - 1) cr_hi = viewbot - 1;
             if (cr_lo > cr_hi) continue;
         }
-        cr_col = fb + COLBYTE(x);
-        cr_keep = COLKEEP(x);
+        cr_col = COLBUF(x);
+        cr_mask = COLMASK(x);
         p = col;
         n = *p++;
         while (n--) {
@@ -1044,4 +1044,25 @@ void render_view(void)
     for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
     col_skip = 0;
     if (show_weapon) draw_weapon();
+    fb_merge = !low_detail;
+    fb_merge_y0 = view_py0;
+    fb_merge_y1 = viewbot;
+}
+
+/* something was drawn into fb over the view: take the odd columns there
+ * out of fb2, so that merging shows the drawing alone */
+void render_drawn_over(s16 x, s16 y, s16 w, s16 h)
+{
+    s16 b0 = (s16)(x >> 2), b1 = (s16)((x + w - 1) >> 2), i;
+    u8 m0 = (u8)(0xff >> 2 * (x & 3)), m1 = (u8)(0xff << 2 * (3 - ((x + w - 1) & 3)));
+    if (!fb_merge || w <= 0) return;
+    if (b0 == b1) m0 &= m1;
+    for (; h > 0; h--, y++) {
+        u8 *p;
+        if (y < fb_merge_y0 || y >= fb_merge_y1) continue;
+        p = fb2 + y * ROWBYTES;
+        p[b0] &= (u8)~m0;
+        for (i = b0 + 1; i < b1; i++) p[i] = 0;
+        if (b1 > b0) p[b1] &= (u8)~m1;
+    }
 }

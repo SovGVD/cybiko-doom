@@ -42,8 +42,8 @@ Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 
 | | start room | widest view (courtyard) | corridors |
 | --- | --- | --- | --- |
-| textured, high detail | 16-20 | 10-14 | 33-34 |
-| textured, auto detail | 19-21 | 14-18 | 34 |
+| textured, high detail | 17-20 | 10-18 | 34-35 |
+| textured, auto detail | 19-22 | 15-23 | 35 |
 | textured near, high detail | 18-20 | 11-13 | 32-34 |
 | flat, high detail | 18-23 | 12-16 | 35 |
 | textured, low detail | 22-30 | 14-16 | 35 |
@@ -159,6 +159,10 @@ sprites from a Doom IWAD you supply into the app:
   sectors breadth first (`render_bsp`, `cross_bsp`, `sound_flood`). The
   game needs about 450 bytes of stack; a deeper call chain shows up as
   garbage in the renderer's tables, then a freeze.
+- In high detail two columns share a byte of the screen buffer, so the odd
+  columns are drawn into a second buffer (`fb2`) and the two are or'ed on
+  the way to the LCD: no fill reads a byte before writing it. Whatever
+  else draws over the view tells the renderer (`render_drawn_over`).
 - The textured column loop (`tline` in `rt.s`) avoids address arithmetic:
   a texture column is aligned to its own size in the map (`wad2cy.py`
   pads them, `level.c` aligns the map buffer to 64 bytes) and the dither

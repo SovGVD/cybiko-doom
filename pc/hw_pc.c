@@ -72,7 +72,9 @@ static void save(const char *path)
     fprintf(f, "P5\n%d %d\n255\n", SCREENW, SCREENH);
     for (y = 0; y < SCREENH; y++)
         for (x = 0; x < SCREENW; x++) {
-            int v = fb[y * ROWBYTES + x / 4] >> (6 - 2 * (x & 3)) & 3;
+            int i = y * ROWBYTES + x / 4;
+            int b = fb[i] | (fb_merge && y >= fb_merge_y0 && y < fb_merge_y1 ? fb2[i] : 0);
+            int v = b >> (6 - 2 * (x & 3)) & 3;
             fputc(lv[v], f);
         }
     fclose(f);
