@@ -11,7 +11,8 @@ straight into /Cybiko/apps on the board's SD card (Cybiko mode copies them
 onto the RAM disk). Scripts (install.js, update.js) come out as UTF-8 text;
 EZ Loader ran them on the PC and they are not for the Cybiko.
 
-The formats are described in docs/cybiko-mp3-cartridge.md. Python 3, no
+The formats are described in file-formats.md of cybiko-docs
+(https://github.com/SovGVD/cybiko-docs). Python 3, no
 extra packages.
 """
 import bz2

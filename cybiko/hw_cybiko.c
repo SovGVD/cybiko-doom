@@ -15,7 +15,8 @@
  * While the game has the machine, a read hands it back to CyOS for the
  * time it takes (cyos_call below).
  *
- * See docs/cybiko-internals.md in the Dragonfruit emulator for the details. */
+ * See hardware.md and cyos.md in cybiko-docs
+ * (https://github.com/SovGVD/cybiko-docs) for the details. */
 #include "../src/hw.h"
 #include "../src/render.h"
 #include "../src/level.h"

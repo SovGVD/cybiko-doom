@@ -161,12 +161,16 @@ sprites from a Doom IWAD you supply into the app:
 
 ## Notes on the Cybiko
 
+General facts about native CyOS applications (imports, the loader, on-chip
+RAM, the watchdog, the decompressor's window, the MP3 card) are in
+cybiko-docs'
+[cyos.md](https://github.com/SovGVD/cybiko-docs/blob/main/cyos.md#native-applications).
+How the game uses them:
+
 - The game turns interrupts off while it runs and so has the whole CPU;
   it resets the watchdog itself and gives CyOS its interrupts back on exit.
-- The H8S's 8 KB of on-chip RAM takes one state an access against the
-  DRAM's three, for instruction fetches too, so while the game runs it
-  holds the renderer's hot code (the column, texture and sprite routines
-  from `render.c`, `hw_init` copies the `.iramfn` section there; the fill
+- The on-chip RAM, three times faster than DRAM, holds the renderer's hot
+  code (the column, texture and sprite routines from `render.c`, `hw_init` copies the `.iramfn` section there; the fill
   loops and the division and multiplication helpers from `rt.s`), its hot
   tables (among them the texture dither bytes for all 32 lights, 1 KB) and
   the stack (`cybiko/link.ld`). CyOS's contents are kept aside and put back
@@ -188,22 +192,18 @@ sprites from a Doom IWAD you supply into the app:
   tables to 32 bytes, so a texel or a dither byte is reached by setting
   the low bits of an address.
 - The pack is read with CyOS's own file functions (`FileInput`,
-  `Input_read`; `cybiko/cyos.ld` has their export numbers from the Cybiko
-  SDK). The app imports them like CyOS's own applications do:
+  `Input_read`; `cybiko/cyos.ld` has their export numbers):
   `cybiko_mkapp.py` turns calls to `0xf00000 + N` into imports of kernel
   export N. To read a map while the game runs, the game hands the machine
   back to CyOS for that time (its on-chip RAM, the DTC and the interrupts,
   on CyOS's stack), so CyOS's own screen can show for a moment while a map
   loads.
 - The MP3 cartridge's card is CyOS's `/MP3/` only with the cartridge
-  software installed. In the emulator the newer set (`sdflash.dl` 21.1.4,
-  in the "MP3Soft" pack) mounts the card; an older set (`sdflash.dl`
-  21.1.3, "AddPack") did not: its card start stopped after reading the
-  card's CSD.
-- CyOS loads only a small zeroed data area, so the game's tables are stored
-  as zeros in the module (the `.app` compression removes them).
-- The CyOS decompressor has an 8 KB window: `cybiko_cap.py` makes no back
-  reference further than 8191 bytes, or large apps load corrupted.
+  software installed (the "MP3Soft" pack; see cybiko-docs).
+- The game's tables are stored as zeros in the module (CyOS loads only a
+  small zeroed data area; the `.app` compression removes the zeros).
+- `cybiko_cap.py` makes no back reference further than 8191 bytes (the CyOS
+  decompressor's window).
 
 ## Licence
 
