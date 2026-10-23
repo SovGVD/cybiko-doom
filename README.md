@@ -40,15 +40,15 @@ Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 
 | | start room | widest view (courtyard) | corridors |
 | --- | --- | --- | --- |
-| textured, high detail | 12-14 | 10 | 26-33 |
-| textured, auto detail | 17-20 | 14-17 | 26-33 |
-| textured near, high detail | 13-15 | 11 | 26-32 |
-| flat, high detail | 14-19 | 11-15 | 35 |
-| textured, low detail | 17-22 | 14-19 | 35 |
-| textured near, low detail | 19-23 | 15-18 | 35 |
-| flat, low detail | 19-27 | 15-23 | 35 |
-| textured, auto detail, alternate columns | 20-21 | 13-15 | 35 |
-| textured near, low detail, alternate columns | 21-30 | 13-21 | 35 |
+| textured, high detail | 16-20 | 10-14 | 33-34 |
+| textured, auto detail | 19-21 | 14-18 | 34 |
+| textured near, high detail | 18-20 | 11-13 | 32-34 |
+| flat, high detail | 18-23 | 12-16 | 35 |
+| textured, low detail | 22-30 | 14-16 | 35 |
+| textured near, low detail | 23-30 | 15-17 | 31-35 |
+| flat, low detail | 23-33 | 15-21 | 35 |
+| textured, auto detail, alternate columns | 20-27 | 16-21 | 35 |
+| textured near, low detail, alternate columns | 26-33 | 16-22 | 35 |
 
 LOWEST is no faster than LOW: with 40 columns the time goes to the
 per-column setup, the BSP walk, the sprites and the copy to the LCD rather
@@ -68,7 +68,7 @@ Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
 
 This makes:
 
-- `build/doom.app`, the game (about 57 KB). Put it on the Cybiko with the
+- `build/doom.app`, the game (about 59 KB). Put it on the Cybiko with the
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
@@ -137,10 +137,14 @@ sprites from a Doom IWAD you supply into the app:
 - The game turns interrupts off while it runs and so has the whole CPU;
   it resets the watchdog itself and gives CyOS its interrupts back on exit.
 - The H8S's 8 KB of on-chip RAM takes one state an access against the
-  DRAM's three, so while the game runs it holds the screen buffer, the stack,
-  the renderer's hot tables (among them the texture dither bytes for all
-  32 lights, 1 KB) and its fill loops (`cybiko/link.ld`); CyOS's contents
-  are kept aside and put back on exit, and the DTC is off meanwhile.
+  DRAM's three, for instruction fetches too, so while the game runs it
+  holds the renderer's hot code (the column, texture and sprite routines
+  from `render.c`, `hw_init` copies the `.iramfn` section there; the fill
+  loops and the division and multiplication helpers from `rt.s`), its hot
+  tables (among them the texture dither bytes for all 32 lights, 1 KB) and
+  the stack (`cybiko/link.ld`). CyOS's contents are kept aside and put back
+  on exit, and the DTC is off meanwhile. The screen buffer stayed in DRAM:
+  the code gains more there than the fills lose.
 - That leaves the stack about 1.1 KB, so nothing in the game recurses:
   the BSP walks of the renderer and of the sight checks keep their pending
   nodes on small arrays, and the sound that wakes monsters floods the

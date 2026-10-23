@@ -51,36 +51,6 @@ _irq_restore:
         ldc     r0l,ccr
         rts
 
-; s16 div32_16(s32 n, s16 d): quotient must fit in 16 bits
-        .global _div32_16
-_div32_16:
-        divxs.w r1,er0
-        exts.l  er0
-        rts
-
-; s32 ldiv32_16(s32 n, s16 d): full 32-bit quotient
-        .global _ldiv32_16
-_ldiv32_16:
-        mov.b   #0,r3h                  ; r3h: result sign
-        mov.l   er0,er0
-        bpl     1f
-        neg.l   er0
-        not.b   r3h
-1:      mov.w   r1,r1
-        bpl     2f
-        neg.w   r1
-        not.b   r3h
-2:      mov.w   e0,r2                   ; high word / d
-        extu.l  er2
-        divxu.w r1,er2                  ; r2 = q_hi, e2 = remainder
-        mov.w   e2,e0                   ; (rem << 16) | low word
-        divxu.w r1,er0                  ; r0 = q_lo
-        mov.w   r2,e0                   ; er0 = q_hi:q_lo
-        mov.b   r3h,r3h
-        beq     3f
-        neg.l   er0
-3:      rts
-
 ; unsigned 32 / 32: quotient er0, remainder er2
         .global ___udivsi3
 ___udivsi3:
@@ -482,32 +452,77 @@ _hw_present_rows_img:
         ble     3f
         mov.l   #_fb,er1
         mov.l   #0x100000,er2
-        mov.b   #99,r0l
+        mov.w   #99,e3                  ; the LCD's row: the top one is 99
 1:      mov.b   #2,r0h
         mov.b   r0h,@er2
         sub.b   r0h,r0h
         mov.b   r0h,@(1,er2)
         mov.b   #3,r0h
         mov.b   r0h,@er2
+        mov.w   e3,r0
         mov.b   r0l,@(1,er2)
         mov.b   #4,r0h
         mov.b   r0h,@er2
         mov.w   #10,e0
-2:      mov.b   @er1+,r0h
+2:      mov.w   @er1+,r0                ; a word read costs what a byte does
         mov.b   r0h,@(1,er2)
-        mov.b   @er1+,r0h
+        mov.b   r0l,@(1,er2)
+        mov.w   @er1+,r0
         mov.b   r0h,@(1,er2)
-        mov.b   @er1+,r0h
-        mov.b   r0h,@(1,er2)
-        mov.b   @er1+,r0h
-        mov.b   r0h,@(1,er2)
+        mov.b   r0l,@(1,er2)
         dec.w   #1,e0
         bne     2b
-        dec.b   r0l
+        dec.w   #1,e3
         dec.w   #1,r3
         bne     1b
 3:      mov.w   #0x5a00,r0
         mov.w   r0,@0xffbc:16
+        rts
+
+; s16 div32_16(s32 n, s16 d): quotient must fit in 16 bits (the renderer
+; divides once or twice a column, so these two run from on-chip RAM too)
+        .global _div32_16_img
+_div32_16_img:
+        divxs.w r1,er0
+        exts.l  er0
+        rts
+
+; s32 ldiv32_16(s32 n, s16 d): full 32-bit quotient
+        .global _ldiv32_16_img
+_ldiv32_16_img:
+        mov.b   #0,r3h                  ; r3h: result sign
+        mov.l   er0,er0
+        bpl     1f
+        neg.l   er0
+        not.b   r3h
+1:      mov.w   r1,r1
+        bpl     2f
+        neg.w   r1
+        not.b   r3h
+2:      mov.w   e0,r2                   ; high word / d
+        extu.l  er2
+        divxu.w r1,er2                  ; r2 = q_hi, e2 = remainder
+        mov.w   e2,e0                   ; (rem << 16) | low word
+        divxu.w r1,er0                  ; r0 = q_lo
+        mov.w   r2,e0                   ; er0 = q_hi:q_lo
+        mov.b   r3h,r3h
+        beq     3f
+        neg.l   er0
+3:      rts
+
+; long __mulsi3(long a, long b): gcc's 32-bit multiply (libgcc's, copied
+; here so that it runs from the on-chip RAM too; link.ld names the copy)
+        .global ___mulsi3_img
+___mulsi3_img:
+        mov.l   er0,er2
+        mov.l   er1,er3
+        mulxu.w r1,er0
+        mov.w   e3,r3
+        mulxu.w r2,er3
+        mov.w   e2,r2
+        mulxu.w r1,er2
+        add.w   r3,r2
+        add.w   r2,e0
         rts
 
         .global __iram_code_end

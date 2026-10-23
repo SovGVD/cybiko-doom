@@ -21,8 +21,16 @@ extern u8 low_detail;           /* 1: 40 columns of 4 pixels, 2: and 2 rows a te
  * (cybiko/link.ld); it is set up at run time, never initialised */
 #ifdef __H8300S__
 #define IRAM __attribute__((section(".iram")))
+/* the renderer's hottest functions also run from on-chip RAM: hw_init
+ * copies the .iramfn section there and link.ld names the copies, so a
+ * call to name() reaches the copy (name_img is the one in the image) */
+#define IRAM_FN(ret, name, args) \
+    ret name args; \
+    ret name##_img args __attribute__((section(".iramfn"))); \
+    ret name##_img args
 #else
 #define IRAM
+#define IRAM_FN(ret, name, args) static ret name args
 #endif
 
 /* shades 0 (white) .. 6 (black): odd ones are 2x2 checkerboards */

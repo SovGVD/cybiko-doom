@@ -24,9 +24,7 @@
 #include "game.h"
 #include "level.h"
 
-#ifndef __H8300S__
-u8 fb[SCREENH * ROWBYTES];      /* on the Cybiko it is in on-chip RAM (link.ld) */
-#endif
+u8 fb[SCREENH * ROWBYTES];
 
 #define NEARZ 8                 /* Q1: 4 map units */
 #define MAXCOORD 23000          /* Q1 deltas past this are not drawn */
@@ -97,7 +95,7 @@ static s16 clip_t(s32 d1, s32 d2)
 
 /* clip (x1,z1)-(x2,z2) to z >= NEARZ, -z <= x <= z; 0 if nothing is left.
  * *c1 / *c2 are set when an end was cut. */
-static int clip_seg(s16 *x1, s16 *z1, s16 *x2, s16 *z2, s16 *u1, s16 *u2, u8 *c1, u8 *c2)
+IRAM_FN(int, clip_seg, (s16 *x1, s16 *z1, s16 *x2, s16 *z2, s16 *u1, s16 *u2, u8 *c1, u8 *c2))
 {
     int pass;
     for (pass = 0; pass < 3; pass++) {
@@ -220,7 +218,7 @@ void vline(s16 x, s16 y1, s16 y2, u8 shade)
 }
 #endif
 
-static void dot(s16 x, s16 y, u8 shade)
+IRAM_FN(void, dot, (s16 x, s16 y, u8 shade))
 {
     u8 *p = fb + y * ROWBYTES + COLBYTE(x);
     u8 keep = COLKEEP(x);
@@ -267,7 +265,7 @@ void tline(s16 x, s16 y1, s16 y2)
 
 /* rows y1..y2 of a wall piece: texture t, top row at height vtop above the
  * eye; u is the texture column in units, vstep units per row (16.16) */
-static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u, s32 vstep)
+IRAM_FN(void, tex_piece, (s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u, s32 vstep))
 {
     s32 step = vstep >> t->shift;
     if (step > 0xffffffL) step = 0xffffffL;
@@ -278,7 +276,7 @@ static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u
     tline(x, y1, y2);
 }
 
-static void render_columns(s16 x, s16 stop)
+IRAM_FN(void, render_columns, (s16 x, s16 stop))
 {
     s32 top, bot, high = 0, low = 0, sc, us;
     s32 topstep, botstep, highstep, lowstep, scstep, usstep;
@@ -714,8 +712,8 @@ void cell_run(const u8 *c, s16 r, s16 e)
  * (xfrac + (x - x1) * xstep) >> 16, cell row r starts at screen row
  * (ytop + r * ystep) >> 16. Rows outside top[]..bot[] (per column, or
  * the whole view without them) are not drawn. */
-static void draw_cells(const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 ytop, s32 ystep,
-                       const s8 *top, const s8 *bot, u8 light, u8 shadow)
+IRAM_FN(void, draw_cells, (const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 ytop, s32 ystep,
+                           const s8 *top, const s8 *bot, u8 light, u8 shadow))
 {
     s16 x, cw = spr[0], ch = spr[1], colx = 0;
     const u8 *col = spr + 6;

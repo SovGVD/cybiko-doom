@@ -49,7 +49,7 @@ long cy_Input_read(void *in, void *buf, long n);
 void cy_Input_dtor(void *in, int memory_flag);
 #define LEAVE_MEMORY 2
 
-/* The game runs with its screen buffer (fb, see link.ld) and its stack in
+/* The game runs with its hot code, tables and stack (see link.ld) in
  * the on-chip RAM from IRAM_START to IRAM_END. CyOS's data there is kept in
  * iram_save meanwhile, and the data transfer controller, which works from
  * tables in that RAM, is switched off (DTCER) until the game is done. */
@@ -59,8 +59,9 @@ void cy_Input_dtor(void *in, int memory_flag);
 static u8 iram_save[IRAM_END - IRAM_START];
 static u8 iram_game[IRAM_END - IRAM_START];  /* the game's, during cyos_call */
 static u8 dtcer_save[6];
-extern u8 _iram_stack_top[], _iram_code[], _iram_code_end[];
-#define IRAM_CODE 0xfff800UL
+extern u8 _iram_stack_top[], _iram_code[], _iram_code_end[], _iramfn[], _iramfn_end[];
+#define IRAM_CODE 0xfff800UL    /* rt.s's routines (link.ld) */
+#define IRAM_FN_BASE 0xffdc00UL      /* the renderer's hot C functions */
 
 void hw_idle(void)
 {
@@ -82,6 +83,7 @@ void hw_init(void)
     }
     mcpy(iram_save, (void *)IRAM_START, sizeof iram_save);
     mcpy((void *)IRAM_CODE, _iram_code, (u32)(_iram_code_end - _iram_code));
+    mcpy((void *)IRAM_FN_BASE, _iramfn, (u32)(_iramfn_end - _iramfn));
     hw_idle();
     clock_last = TCNT5;
     owned = 1;
