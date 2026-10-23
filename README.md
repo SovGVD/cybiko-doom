@@ -1,8 +1,12 @@
 # Doom for Cybiko
 
+> **Experimental.** Tested only in the Dragonfruit Cybiko emulator, on a
+> PC and on the JC4827W543 ESP32-S3 board. It has not been tried on a real
+> Cybiko yet.
+
 A Doom port for the Cybiko Xtreme: a native CyOS application in H8S code
-that plays the original maps on the 160x100, 4-grey screen. It runs on a
-real Cybiko Xtreme and in the [Dragonfruit](https://github.com/SovGVD/Dragonfruit-JC4827W543-esp32)
+that plays the original maps on the 160x100, 4-grey screen. It is meant to run
+on a real Cybiko Xtreme as well as in the [Dragonfruit](https://github.com/SovGVD/Dragonfruit-JC4827W543-esp32)
 Cybiko emulator. It uses no emulator hooks: the game talks to the Xtreme's
 hardware (LCD controller, key matrix, timer) directly.
 
