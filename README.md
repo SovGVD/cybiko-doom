@@ -6,6 +6,15 @@ real Cybiko Xtreme and in the [Dragonfruit](https://github.com/SovGVD/Dragonfrui
 Cybiko emulator. It uses no emulator hooks: the game talks to the Xtreme's
 hardware (LCD controller, key matrix, timer) directly.
 
+![E1M1, the start room](docs/images/start-room.png) ![A zombieman](docs/images/zombie.png)
+
+![The courtyard](docs/images/courtyard.png) ![The automap](docs/images/automap.png)
+
+![The title menu](docs/images/title.png) ![A hall](docs/images/hall.png)
+
+Screenshots from the PC build (see Layout) with Freedoom's E1M1, at twice
+the Cybiko's size; on the device the four greys are the LCD's.
+
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
 - wall textures are shrunk to at most 32 texels along their longer side
