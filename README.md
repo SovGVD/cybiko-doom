@@ -12,27 +12,36 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
   (8, 32 or none when building, see below) in 16 tones, dithered to the 4
   greys and dimmed with the sector light and the distance; floors and
   ceilings are flat dithered shades (from each flat's average brightness,
-  the sector light and the distance); edges are drawn black. Flat walls
-  are a title menu choice and run faster;
+  the sector light and the distance); edges are drawn black;
 - monsters, items, decorations and the weapon are their sprites shrunk to
   at most 32x32 cells in 16 tones, drawn in the 4 greys with a black
   outline;
-- the view is 80 columns of 2 pixels (Doom's low detail) and 84 rows, above
-  a 16-row status bar.
+- the view is 80 columns of 2 pixels (Doom's low detail), or 40 of 4 in
+  the title menu's low detail, and 84 rows, above a 16-row status bar.
 
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
 teleports, secrets and exits, and the five skill levels.
 
+The title menu trades looks for speed before a game starts:
+
+- WALLS: TEXTURED, TEXTURED NEAR (walls further than 512 units are flat
+  shades) or FLAT;
+- DETAIL: HIGH (80 columns) or LOW (40 columns of 4 pixels);
+- WEAPON: SHOWN or HIDDEN (a little faster).
+
 Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 
 | | start room | widest view (courtyard) | corridors |
 | --- | --- | --- | --- |
-| textured walls | 12-13 | 9-10 | 26-31 |
-| flat walls | 15 | 12-14 | 35 |
+| textured, high detail | 11-14 | 10-11 | 26-32 |
+| textured near, high detail | 13-15 | 11 | 26-32 |
+| flat, high detail | 14-19 | 11-15 | 35 |
+| textured, low detail | 17-21 | 13-17 | 35 |
+| textured near, low detail | 19-23 | 15-18 | 35 |
+| flat, low detail | 19-27 | 15-23 | 35 |
 
-The texture size changes only the pack's size, not the speed. Hiding the
-weapon in the title menu makes it a little faster.
+The texture size changes only the pack's size, not the speed.
 
 ## Building
 

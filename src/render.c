@@ -37,6 +37,9 @@ static s16 viewz;               /* units */
 static s16 vcos, vsin;          /* Q14 */
 
 /* column clips: rows still open are ceilclip+1 .. floorclip-1 */
+u8 low_detail;                  /* columns of 4 pixels (the title menu) */
+static s16 vieww;               /* columns: VIEWW, or half in low detail */
+static u8 colbits;              /* log2 of a column's width in Q4 pixels */
 static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 
 /* shades */
@@ -131,7 +134,7 @@ static void clear_clips(void)
 {
     solidsegs[0].first = -0x7fff;
     solidsegs[0].last = -1;
-    solidsegs[1].first = VIEWW;
+    solidsegs[1].first = vieww;
     solidsegs[1].last = 0x7fff;
     newend = solidsegs + 2;
 }
@@ -174,8 +177,8 @@ static void interp(s32 a, s32 b, s32 *start, s32 *step, s16 c)
     s32 perq4;
     if (span < 1) span = 1;
     perq4 = ldiv32_16(b - a, span);
-    *step = perq4 << 5;
-    *start = a + perq4 * (s32)((s16)(c * 32 + 16) - w.sx1);
+    *step = perq4 << colbits;
+    *start = a + perq4 * (s32)((s16)((c << colbits) + (1 << (colbits - 1))) - w.sx1);
 }
 
 static u8 flat_shade(u8 tone, u8 light)
@@ -184,6 +187,9 @@ static u8 flat_shade(u8 tone, u8 light)
 }
 
 /* ---- column filling ---- */
+/* a column's byte in a row of fb and the bits of it not in the column */
+#define COLBYTE(x) (low_detail ? (x) : (x) >> 1)
+#define COLKEEP(x) (low_detail ? 0 : (x) & 1 ? 0xf0 : 0x0f)
 void vline(s16 x, s16 y1, s16 y2, u8 shade);
 
 #ifndef __H8300S__
@@ -192,8 +198,8 @@ void vline(s16 x, s16 y1, s16 y2, u8 shade)
     u8 *p, keep, a, b;
     s16 n;
     if (y1 > y2) return;
-    p = fb + y1 * ROWBYTES + (x >> 1);
-    keep = (x & 1) ? 0xf0 : 0x0f;
+    p = fb + y1 * ROWBYTES + COLBYTE(x);
+    keep = COLKEEP(x);
     a = pat[shade][y1 & 1] & (u8)~keep;
     b = pat[shade][(y1 & 1) ^ 1] & (u8)~keep;
     n = y2 - y1 + 1;
@@ -209,8 +215,8 @@ void vline(s16 x, s16 y1, s16 y2, u8 shade)
 
 static void dot(s16 x, s16 y, u8 shade)
 {
-    u8 *p = fb + y * ROWBYTES + (x >> 1);
-    u8 keep = (x & 1) ? 0xf0 : 0x0f;
+    u8 *p = fb + y * ROWBYTES + COLBYTE(x);
+    u8 keep = COLKEEP(x);
     *p = (*p & keep) | (pat[shade][y & 1] & (u8)~keep);
 }
 
@@ -232,8 +238,8 @@ void tline(s16 x, s16 y1, s16 y2);
 #ifndef __H8300S__
 void tline(s16 x, s16 y1, s16 y2)
 {
-    u8 *p = fb + y1 * ROWBYTES + (x >> 1);
-    u8 keep = (x & 1) ? 0xf0 : 0x0f, odd = y1 & 1;
+    u8 *p = fb + y1 * ROWBYTES + COLBYTE(x);
+    u8 keep = COLKEEP(x), odd = y1 & 1;
     u16 v = tl_v;
     for (; y1 <= y2; y1++, p += ROWBYTES, v += tl_step) {
         *p = (*p & keep) | (tex_lut[odd][tl_col[(u8)(v >> 8) & tl_hmask]] & (u8)~keep);
@@ -425,6 +431,8 @@ static u8 bright(u8 tone, u8 light)
     return (u8)(((u16)tone * light) >> 8);
 }
 
+#define NEARSCALE (163840L / 512)
+
 static void add_seg(const seg_t *seg)
 {
     s16 x1, z1, x2, z2, c0, c1, u1, u2;
@@ -444,11 +452,11 @@ static void add_seg(const seg_t *seg)
     if (!clip_seg(&x1, &z1, &x2, &z2, &u1, &u2, &cut1, &cut2)) return;
     w.sx1 = project_x(x1, z1);
     w.sx2 = project_x(x2, z2);
-    c0 = (w.sx1 + 31) >> 5;
-    c1 = ((w.sx2 + 31) >> 5) - 1;
+    c0 = (w.sx1 + (1 << colbits) - 1) >> colbits;
+    c1 = ((w.sx2 + (1 << colbits) - 1) >> colbits) - 1;
     if (c0 > c1) return;
     if (c0 < 0) c0 = 0;
-    if (c1 > VIEWW - 1) c1 = VIEWW - 1;
+    if (c1 > vieww - 1) c1 = vieww - 1;
     if (c0 > c1) return;
 
     back = seg->back >= 0 ? &lvl.sectors[seg->back] : NULL;
@@ -481,7 +489,9 @@ static void add_seg(const seg_t *seg)
         w.bwall = bright(seg->mid, front->light);
         w.light = front->light;
         w.tmid = w.ttop = w.tbot = NULL;
-        if (show_textures) {
+        /* show_textures 2: only near walls (closer than 512 units at
+         * either end) are textured */
+        if (show_textures == 1 || (show_textures == 2 && (s1 > NEARSCALE || s2 > NEARSCALE))) {
             u16 fl = lvl.lines[seg->line].flags;
             interp(MUL16(u1, s1), MUL16(u2, s2), &w.us, &w.usstep, c0);
             if (!back && seg->tmid < lvl.ntex) {
@@ -583,18 +593,18 @@ static void add_sprite(mobj_t *mo, const u8 *sil)
     {
         s32 lx = ldiv32_16(MUL16((s16)left, SCREENW * 8), tz) + SCREENW * 8;
         s32 rx = ldiv32_16(MUL16((s16)right, SCREENW * 8), tz) + SCREENW * 8;
-        x1 = (s16)((lx + 31) >> 5);
-        x2 = (s16)(((rx + 31) >> 5) - 1);
-        if (x1 > x2 || x2 < 0 || x1 >= VIEWW) return;
+        x1 = (s16)((lx + (1 << colbits) - 1) >> colbits);
+        x2 = (s16)(((rx + (1 << colbits) - 1) >> colbits) - 1);
+        if (x1 > x2 || x2 < 0 || x1 >= vieww) return;
         v = &vis[nvis];
         /* cells per column */
-        v->xstep = ldiv32_16((s32)cw << 16, (s16)((rx - lx) >> 5 ? (rx - lx) >> 5 : 1));
+        v->xstep = ldiv32_16((s32)cw << 16, (s16)((rx - lx) >> colbits ? (rx - lx) >> colbits : 1));
         v->xfrac = 0;
         if (x1 < 0) {
             v->xfrac = v->xstep * (s32)(-x1);
             x1 = 0;
         }
-        if (x2 > VIEWW - 1) x2 = VIEWW - 1;
+        if (x2 > vieww - 1) x2 = vieww - 1;
     }
     n = x2 - x1 + 1;
     if (poolused + n > POOL) return;
@@ -658,7 +668,8 @@ void cell_run(const u8 *c, s16 r, s16 e);
 void cell_run(const u8 *c, s16 r, s16 e)
 {
     const s16 *rt = rowtab + r;
-    s16 sa = 0, sb = -1, n = e - r, x = (s16)((cr_col - fb) * 2 + (cr_keep == 0xf0));
+    s16 sa = 0, sb = -1, n = e - r;
+    s16 x = (s16)(low_detail ? cr_col - fb : (cr_col - fb) * 2 + (cr_keep == 0xf0));
     u8 ssh = 0;
     for (; n; n--, c++, rt++) {
         s16 ya = rt[0], yb = rt[1] - 1;
@@ -711,7 +722,7 @@ static void draw_cells(const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 
             col = next_column(col);
             colx++;
         }
-        if (x < 0 || x >= VIEWW) continue;
+        if (x < 0 || x >= vieww) continue;
         cr_ebase = 0;
         if (x == x1 || (s16)((xf - xstep) >> 16) != cx) cr_ebase |= 0x40;
         if (x == x2 || (s16)((xf + xstep) >> 16) != cx) cr_ebase |= 0x80;
@@ -724,8 +735,8 @@ static void draw_cells(const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 
             if (cr_hi > VIEWH - 1) cr_hi = VIEWH - 1;
             if (cr_lo > cr_hi) continue;
         }
-        cr_col = fb + (x >> 1);
-        cr_keep = (x & 1) ? 0xf0 : 0x0f;
+        cr_col = fb + COLBYTE(x);
+        cr_keep = COLKEEP(x);
         p = col;
         n = *p++;
         while (n--) {
@@ -804,13 +815,13 @@ static int check_bbox(const s16 *bbox)
     z2 = (s16)((MUL16(dx2, vcos) + MUL16(dy2, vsin)) >> 14);
     x2 = (s16)((MUL16(dx2, vsin) - MUL16(dy2, vcos)) >> 14);
     if (!clip_seg(&x1, &z1, &x2, &z2, &u1, &u2, &cut1, &cut2)) return 0;
-    c0 = (project_x(x1, z1) + 31) >> 5;
-    c1 = ((project_x(x2, z2) + 31) >> 5) - 1;
+    c0 = (project_x(x1, z1) + (1 << colbits) - 1) >> colbits;
+    c1 = ((project_x(x2, z2) + (1 << colbits) - 1) >> colbits) - 1;
     if (c0 > c1) {
         s16 t = c0; c0 = c1; c1 = t;
     }
     if (c0 < 0) c0 = 0;
-    if (c1 > VIEWW - 1) c1 = VIEWW - 1;
+    if (c1 > vieww - 1) c1 = vieww - 1;
     if (c0 > c1) return 0;
     start = solidsegs;
     while (start->last < c1) start++;
@@ -833,7 +844,7 @@ static void render_node(u16 bspnum)
             side = r >= l;
         }
         render_node(bsp->children[side]);
-        if (solidsegs[0].last >= VIEWW - 1) return;      /* screen full */
+        if (solidsegs[0].last >= vieww - 1) return;      /* screen full */
         if (!check_bbox(bsp->bbox[side ^ 1])) return;
         bspnum = bsp->children[side ^ 1];
     }
@@ -858,11 +869,12 @@ static void draw_weapon(void)
      * here a cell is f/2 columns... keep it simple: centre it at the bottom */
     bobx = (s16)(MUL16(fsin(gametic * 512), (s16)(player.bob >> 12)) >> 18);
     boby = (s16)((MUL16(fcos(gametic * 1024), (s16)(player.bob >> 12)) >> 18) & 7);
-    /* a cell is f/2 screen pixels: f/4 columns and f/2 rows */
-    x = VIEWW / 2 - (cw * f) / 8 + bobx;
+    /* a cell is f/2 screen pixels: f/4 columns (f/8 in low detail) and
+     * f/2 rows */
+    x = vieww / 2 - ((cw * f) >> (3 + low_detail)) + (bobx >> low_detail);
     y0 = VIEWH - (ch * f) / 2 + 2 + boby;
     {
-        s16 ncols = (s16)((cw * f) / 4);
+        s16 ncols = (s16)((cw * f) >> (2 + low_detail));
         if (ncols < 1) ncols = 1;
         draw_cells(sil, x, x + ncols - 1, 0, ((s32)cw << 16) / ncols, (s32)y0 << 16,
                    (s32)f << 15, NULL, NULL, lvl.sectors[player.mo->ss->sector].light, 0);
@@ -905,6 +917,8 @@ void render_view(void)
     viewz = (s16)(player.viewz >> 16);
     vcos = fcos(pm->angle);
     vsin = fsin(pm->angle);
+    vieww = VIEWW >> low_detail;
+    colbits = (u8)(5 + low_detail);
     for (i = 0; i < VIEWW; i++) {
         ceilclip[i] = -1;
         floorclip[i] = VIEWH;

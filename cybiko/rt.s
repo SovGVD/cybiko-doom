@@ -277,7 +277,8 @@ _cell_run_img:
 4:      ldm.l   @er7+,er4-er6
         rts
 
-; void vline(s16 x, s16 y1, s16 y2, u8 shade): fill column x (of 80) from
+; void vline(s16 x, s16 y1, s16 y2, u8 shade): fill column x (of 80, or 40
+; in low detail) from
 ; row y1 to y2 (0 <= y1) with a dithered shade (render.c has it in C too)
         .global _vline_img
 _vline_img:
@@ -288,10 +289,15 @@ _vline_img:
         mov.w   r2,e4
         mov.b   @(11,er7),r3l
         mov.w   r0,r1
+        mov.b   @_low_detail:32,r2h     ; low detail: column x is byte x
+        bne     2f
         shar.w  r1
-        exts.l  er1
+2:      exts.l  er1
         add.l   #_fb,er1
         mov.l   er1,@_cr_col:32
+        sub.b   r2l,r2l
+        mov.b   r2h,r2h
+        bne     1f
         mov.b   #0x0f,r2l
         btst    #0,r0l
         beq     1f
@@ -302,7 +308,7 @@ _vline_img:
 9:      rts
 
 ; void tline(s16 x, s16 y1, s16 y2): a textured column (render.c has it in
-; C too): rows y1..y2 of column x (of 80) from the texels at tl_col, texel
+; C too): rows y1..y2 of column x (of 80, or 40 in low detail) from the texels at tl_col, texel
 ; (tl_v >> 8) & tl_hmask, tl_v += tl_step a row; tex_lut[row & 1][texel] is
 ; the dither byte.
 ;   er2 texels, er3 tex_lut, r1h row parity (0 / 16), er4 screen byte,
@@ -321,11 +327,17 @@ _tline_img:
         mov.w   #40,r4
         mulxu.w r4,er3
         mov.w   r0,r4
+        mov.b   @_low_detail:32,r5h     ; low detail: column x is byte x
+        bne     4f
         shar.w  r4
-        exts.l  er4
+4:      exts.l  er4
         add.l   er3,er4
         add.l   #_fb,er4
-        mov.b   #0x0f,r5h
+        mov.b   r5h,r5h
+        beq     5f
+        sub.b   r5h,r5h
+        bra     1f
+5:      mov.b   #0x0f,r5h
         btst    #0,r0l
         beq     1f
         mov.b   #0xf0,r5h
