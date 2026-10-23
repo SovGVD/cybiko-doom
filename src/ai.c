@@ -13,35 +13,51 @@ void ev_lower_floor_tag(s16 tag);
 
 /* ---- hearing ---- */
 
-static mobj_t *soundtarget;
+/* Doom P_RecursiveSound as a breadth-first flood (the on-chip stack is
+ * small): first every sector the sound reaches through open lines, then
+ * those behind one sound-blocking line. soundtraversed 1 or 2 says which. */
+#define SOUNDQ 256
+static u16 soundq[2][SOUNDQ];
 
-static void recursive_sound(sector_t *sec, u8 soundblocks)
+static void sound_flood(sector_t *start, mobj_t *target)
 {
-    s16 i;
-    if (sec->validcount == validcount && sec->soundtraversed <= soundblocks + 1) return;
-    sec->validcount = validcount;
-    sec->soundtraversed = soundblocks + 1;
-    sec->soundtarget = soundtarget;
-    for (i = 0; i < sec->nlines; i++) {
-        line_t *l = &lvl.lines[sec->lines[i]];
-        sector_t *other, *f, *b;
-        if (!(l->flags & ML_TWOSIDED) || l->sec[1] < 0) continue;
-        f = &lvl.sectors[l->sec[0]];
-        b = &lvl.sectors[l->sec[1]];
-        if (MIN(f->ceilh, b->ceilh) <= MAX(f->floorh, b->floorh)) continue;   /* closed door */
-        other = f == sec ? b : f;
-        if (l->flags & ML_SOUNDBLOCK) {
-            if (!soundblocks) recursive_sound(other, 1);
-        } else
-            recursive_sound(other, soundblocks);
+    u16 n[2], head, level;
+    n[0] = 1;
+    n[1] = 0;
+    soundq[0][0] = (u16)(start - lvl.sectors);
+    start->validcount = validcount;
+    start->soundtraversed = 1;
+    for (level = 0; level < 2; level++) {
+        for (head = 0; head < n[level]; head++) {
+            sector_t *sec = &lvl.sectors[soundq[level][head]];
+            s16 i;
+            if (sec->soundtraversed != level + 1) continue;   /* reached better since */
+            sec->soundtarget = target;
+            for (i = 0; i < sec->nlines; i++) {
+                line_t *l = &lvl.lines[sec->lines[i]];
+                sector_t *other, *f, *b;
+                u16 to;
+                if (!(l->flags & ML_TWOSIDED) || l->sec[1] < 0) continue;
+                f = &lvl.sectors[l->sec[0]];
+                b = &lvl.sectors[l->sec[1]];
+                if (MIN(f->ceilh, b->ceilh) <= MAX(f->floorh, b->floorh)) continue;   /* closed door */
+                other = f == sec ? b : f;
+                to = (l->flags & ML_SOUNDBLOCK) ? level + 1 : level;
+                if (to > 1) continue;
+                if (other->validcount == validcount && other->soundtraversed <= to + 1) continue;
+                if (n[to] == SOUNDQ) continue;
+                other->validcount = validcount;
+                other->soundtraversed = (u8)(to + 1);
+                soundq[to][n[to]++] = (u16)(other - lvl.sectors);
+            }
+        }
     }
 }
 
 void noise_alert(mobj_t *target, mobj_t *emitter)
 {
-    soundtarget = target;
     validcount++;
-    recursive_sound(&lvl.sectors[emitter->ss->sector], 0);
+    sound_flood(&lvl.sectors[emitter->ss->sector], target);
 }
 
 /* ---- looking and walking ---- */

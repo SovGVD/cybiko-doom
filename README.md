@@ -31,6 +31,9 @@ The title menu trades looks for speed before a game starts:
   one texel for two rows) or AUTO, the default: low detail only while a
   frame takes longer than 1/15 s, high again under 1/24 s, so open areas
   turn blocky and corridors stay sharp;
+- COLUMNS: ALL, or ALTERNATE: each frame draws every other column of
+  the walls and things (the odd ones, then the even ones), so a still view
+  is complete and a moving one is a little rougher;
 - WEAPON: SHOWN or HIDDEN (a little faster).
 
 Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
@@ -44,6 +47,8 @@ Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 | textured, low detail | 17-22 | 14-19 | 35 |
 | textured near, low detail | 19-23 | 15-18 | 35 |
 | flat, low detail | 19-27 | 15-23 | 35 |
+| textured, auto detail, alternate columns | 20-21 | 13-15 | 35 |
+| textured near, low detail, alternate columns | 21-30 | 13-21 | 35 |
 
 LOWEST is no faster than LOW: with 40 columns the time goes to the
 per-column setup, the BSP walk, the sprites and the copy to the LCD rather
@@ -136,6 +141,12 @@ sprites from a Doom IWAD you supply into the app:
   the renderer's hot tables (among them the texture dither bytes for all
   32 lights, 1 KB) and its fill loops (`cybiko/link.ld`); CyOS's contents
   are kept aside and put back on exit, and the DTC is off meanwhile.
+- That leaves the stack about 1.1 KB, so nothing in the game recurses:
+  the BSP walks of the renderer and of the sight checks keep their pending
+  nodes on small arrays, and the sound that wakes monsters floods the
+  sectors breadth first (`render_bsp`, `cross_bsp`, `sound_flood`). The
+  game needs about 450 bytes of stack; a deeper call chain shows up as
+  garbage in the renderer's tables, then a freeze.
 - The textured column loop (`tline` in `rt.s`) avoids address arithmetic:
   a texture column is aligned to its own size in the map (`wad2cy.py`
   pads them, `level.c` aligns the map buffer to 64 bytes) and the dither

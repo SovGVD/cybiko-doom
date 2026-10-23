@@ -42,6 +42,9 @@ static s16 vcos, vsin;          /* Q14 */
  * (link.ld checks): tline takes a byte by setting the low address byte. */
 u8 tex_luts[32][2][16] IRAM;
 u8 low_detail;                  /* 1: columns of 4 pixels, 2: and 2 rows a texel */
+u8 interlace;                   /* every other column a frame (the title menu) */
+static u8 col_skip;             /* 1: skip the columns whose parity is not col_par */
+static u8 col_par;
 static s16 vieww;               /* columns: VIEWW, or half in low detail */
 static u8 colbits;              /* log2 of a column's width in Q4 pixels */
 static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
@@ -278,9 +281,15 @@ static void tex_piece(s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s32 u
 static void render_columns(s16 x, s16 stop)
 {
     s32 top, bot, high = 0, low = 0, sc, us;
-    s16 d = x - w.c0;
+    s32 topstep, botstep, highstep, lowstep, scstep, usstep;
+    s16 d, xstep = 1;
     u8 textured = w.tmid || w.ttop || w.tbot;
 
+    if (col_skip) {                     /* interlaced: this frame's columns */
+        if ((x ^ col_par) & 1) x++;
+        xstep = 2;
+    }
+    d = x - w.c0;
     /* values at the first column drawn */
     top = w.top + w.topstep * d;
     bot = w.bot + w.botstep * d;
@@ -288,8 +297,14 @@ static void render_columns(s16 x, s16 stop)
     if (w.drawbottom) low = w.low + w.lowstep * d;
     sc = w.sc + w.scstep * d;
     us = w.us + w.usstep * d;
+    topstep = w.topstep * xstep;
+    botstep = w.botstep * xstep;
+    highstep = w.highstep * xstep;
+    lowstep = w.lowstep * xstep;
+    scstep = w.scstep * xstep;
+    usstep = w.usstep * xstep;
 
-    for (; x <= stop; x++) {
+    for (; x <= stop; x += xstep) {
         s32 u = 0, vstep = 0;
         s16 ctop = ceilclip[x] + 1, cbot = floorclip[x] - 1;
         s16 yl = (s16)(top >> 16), yh = (s16)(bot >> 16);
@@ -329,7 +344,7 @@ static void render_columns(s16 x, s16 stop)
         } else {
             if (w.drawtop) {
                 s16 mid = (s16)(high >> 16);
-                high += w.highstep;
+                high += highstep;
                 if (mid >= cbot + 1) mid = cbot;
                 if (mid >= yl) {
                     if (w.ttop && !vedge) tex_piece(x, yl, mid, w.ttop, w.vtop, u, vstep);
@@ -343,7 +358,7 @@ static void render_columns(s16 x, s16 stop)
                 ceilclip[x] = (s8)(yl - 1);
             if (w.drawbottom) {
                 s16 mid = (s16)(low >> 16) + 1;
-                low += w.lowstep;
+                low += lowstep;
                 if (mid <= ceilclip[x]) mid = ceilclip[x] + 1;
                 if (mid <= yh) {
                     if (w.tbot && !vedge) tex_piece(x, mid, yh, w.tbot, w.vbot, u, vstep);
@@ -356,10 +371,10 @@ static void render_columns(s16 x, s16 stop)
             } else if (w.markfloor)
                 floorclip[x] = (s8)(yh + 1);
         }
-        top += w.topstep;
-        bot += w.botstep;
-        sc += w.scstep;
-        us += w.usstep;
+        top += topstep;
+        bot += botstep;
+        sc += scstep;
+        us += usstep;
     }
 }
 
@@ -725,6 +740,7 @@ static void draw_cells(const u8 *spr, s16 x1, s16 x2, s32 xfrac, s32 xstep, s32 
             colx++;
         }
         if (x < 0 || x >= vieww) continue;
+        if (col_skip && ((x ^ col_par) & 1)) continue;
         cr_ebase = 0;
         if (x == x1 || (s16)((xf - xstep) >> 16) != cx) cr_ebase |= 0x40;
         if (x == x2 || (s16)((xf + xstep) >> 16) != cx) cr_ebase |= 0x80;
@@ -831,27 +847,48 @@ static int check_bbox(const s16 *bbox)
     return 1;
 }
 
-static void render_node(u16 bspnum)
+/* The BSP walk (Doom R_RenderBSPNode) with its own node stack: the
+ * recursion would cost over 100 bytes of the small on-chip stack a level,
+ * with render_subsector's locals inlined. Each entry is a node with the
+ * side taken in bit 15 (a node number is below NF_SUBSECTOR). */
+#define NODESTACK 96
+static u16 nodestack[NODESTACK];
+
+static void render_bsp(void)
 {
-    while (!(bspnum & NF_SUBSECTOR)) {
-        const node_t *bsp = &lvl.nodes[bspnum];
-        s16 px = (s16)(vx >> 1), py = (s16)(vy >> 1);
-        int side;
-        /* which side is the viewer on (Doom R_PointOnSide, whole units) */
-        if (!bsp->dx) side = px <= bsp->x ? bsp->dy > 0 : bsp->dy < 0;
-        else if (!bsp->dy) side = py <= bsp->y ? bsp->dx < 0 : bsp->dx > 0;
-        else {
-            s32 l = MUL16(bsp->dy, (s16)((vx - ((s32)bsp->x << 1)) >> 1));
-            s32 r = MUL16((s16)((vy - ((s32)bsp->y << 1)) >> 1), bsp->dx);
-            side = r >= l;
+    u16 bspnum = (u16)(lvl.nnodes - 1), sp = 0;
+    for (;;) {
+        while (!(bspnum & NF_SUBSECTOR)) {
+            const node_t *bsp = &lvl.nodes[bspnum];
+            s16 px = (s16)(vx >> 1), py = (s16)(vy >> 1);
+            int side;
+            /* which side is the viewer on (Doom R_PointOnSide, whole units) */
+            if (!bsp->dx) side = px <= bsp->x ? bsp->dy > 0 : bsp->dy < 0;
+            else if (!bsp->dy) side = py <= bsp->y ? bsp->dx < 0 : bsp->dx > 0;
+            else {
+                s32 l = MUL16(bsp->dy, (s16)((vx - ((s32)bsp->x << 1)) >> 1));
+                s32 r = MUL16((s16)((vy - ((s32)bsp->y << 1)) >> 1), bsp->dx);
+                side = r >= l;
+            }
+            if (sp < NODESTACK) nodestack[sp++] = (u16)(bspnum | side << 15);
+            bspnum = bsp->children[side];
         }
-        render_node(bsp->children[side]);
-        if (solidsegs[0].last >= vieww - 1) return;      /* screen full */
-        if (!check_bbox(bsp->bbox[side ^ 1])) return;
-        bspnum = bsp->children[side ^ 1];
+        if (bspnum == 0xffff) bspnum = 0;
+        render_subsector(bspnum & ~NF_SUBSECTOR);
+        /* back up to the nearest node whose far side may still show */
+        for (;;) {
+            const node_t *bsp;
+            int side;
+            if (!sp || solidsegs[0].last >= vieww - 1) return;      /* screen full */
+            bspnum = nodestack[--sp];
+            side = bspnum >> 15;
+            bsp = &lvl.nodes[bspnum & ~NF_SUBSECTOR];
+            if (check_bbox(bsp->bbox[side ^ 1])) {
+                bspnum = bsp->children[side ^ 1];
+                break;
+            }
+        }
     }
-    if (bspnum == 0xffff) bspnum = 0;
-    render_subsector(bspnum & ~NF_SUBSECTOR);
 }
 
 /* ---- the player's weapon ---- */
@@ -935,7 +972,10 @@ void render_view(void)
     nvis = 0;
     poolused = 0;
     if (lvl.nvertexes > MAXVERTS) return;
-    render_node((u16)(lvl.nnodes - 1));
+    col_skip = interlace;
+    col_par = (u8)(framecount & 1);
+    render_bsp();
     for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
+    col_skip = 0;
     if (show_weapon) draw_weapon();
 }

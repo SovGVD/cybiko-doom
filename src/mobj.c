@@ -462,16 +462,30 @@ static int cross_subsector(u16 num)
     return 1;
 }
 
-static int cross_bsp(u16 bspnum)
+/* Doom P_CrossBSPNode without the recursion (the on-chip stack is small):
+ * the nodes still to look at wait on their own stack. Every subsector the
+ * line crosses must let it through, so the order does not matter. */
+#define SIGHTSTACK 96
+static u16 sightstack[SIGHTSTACK];
+
+static int cross_bsp(void)
 {
-    while (!(bspnum & NF_SUBSECTOR)) {
-        node_t *bsp = &lvl.nodes[bspnum];
-        int side = divline_side(sx1, sy1, bsp->x, bsp->y, bsp->dx, bsp->dy) ^ 1;
-        if (!cross_bsp(bsp->children[side])) return 0;
-        if (side == (divline_side(sx2, sy2, bsp->x, bsp->y, bsp->dx, bsp->dy) ^ 1)) return 1;
-        bspnum = bsp->children[side ^ 1];
+    u16 sp = 1;
+    sightstack[0] = (u16)(lvl.nnodes - 1);
+    while (sp) {
+        u16 bspnum = sightstack[--sp];
+        while (!(bspnum & NF_SUBSECTOR)) {
+            node_t *bsp = &lvl.nodes[bspnum];
+            int side = divline_side(sx1, sy1, bsp->x, bsp->y, bsp->dx, bsp->dy) ^ 1;
+            if (side != (divline_side(sx2, sy2, bsp->x, bsp->y, bsp->dx, bsp->dy) ^ 1)) {
+                if (sp == SIGHTSTACK) return 0;
+                sightstack[sp++] = bsp->children[side ^ 1];
+            }
+            bspnum = bsp->children[side];
+        }
+        if (!cross_subsector(bspnum == 0xffff ? 0 : bspnum & ~NF_SUBSECTOR)) return 0;
     }
-    return cross_subsector(bspnum == 0xffff ? 0 : bspnum & ~NF_SUBSECTOR);
+    return 1;
 }
 
 int check_sight(mobj_t *a, mobj_t *b)
@@ -489,7 +503,7 @@ int check_sight(mobj_t *a, mobj_t *b)
     sdy = (s16)(sy2 - sy1);
     if (sx2 - sx1 > 32767 || sx2 - sx1 < -32767 || sy2 - sy1 > 32767 || sy2 - sy1 < -32767) return 0;
     if (!lvl.nnodes) return 1;
-    return cross_bsp((u16)(lvl.nnodes - 1));
+    return cross_bsp();
 }
 
 /* ---- damage ---- */
