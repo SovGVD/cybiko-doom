@@ -22,6 +22,7 @@ extern s16 fb_merge_y0, fb_merge_y1;
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
 extern u8 show_textures;        /* walls: 0 flat, 1 textured, 2 textured near (the title menu) */
 extern u8 interlace;            /* every other column a frame (the title menu) */
+extern u8 smooth_near;          /* interpolate the texels of magnified walls (the title menu) */
 extern u8 view_size;            /* 0 the whole view, 1 a 128x68 window, 2 96x52 (the title menu) */
 extern u8 low_detail;           /* 1: 40 columns of 4 pixels, 2: and 2 rows a texel (the title menu) */
 

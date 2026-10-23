@@ -63,6 +63,7 @@ static s8 ceilclip[VIEWW] IRAM, floorclip[VIEWW] IRAM;
 /* shades */
 u8 show_weapon = 1;
 u8 show_textures = 1;
+u8 smooth_near = 1;             /* blend texels on magnified walls (the title menu) */
 u8 pat[SHADES][2] IRAM;       /* also used by cybiko/rt.s */
 static u8 shadelut[256] IRAM;   /* brightness -> shade */
 static u8 dimtab[64] IRAM;      /* distance dimming by scale >> 4, of 256 */
@@ -272,6 +273,77 @@ void tline(s16 x, s16 y1, s16 y2)
 }
 #endif
 
+/* A magnified wall (less than a texel a row) with SMOOTHING on: the texel
+ * tones are interpolated, across from this texel column to the next by
+ * fu/256 and along it between neighbouring texels, so that the texels do
+ * not show as flat blocks right in front of a wall. The tone is stepped
+ * per row (8.8) and only recomputed when the row enters a new texel. This
+ * runs from DRAM: .iramfn is full, and near walls are the cheap scenes. */
+
+static const texture_t *tl_tex;
+static s32 tl_u;
+
+/* tsmooth: 2*pairs rows from p, tone (8.8) stepped by ts_dt a row; the
+ * dither bytes are ts_lut[tone >> 8] for the first row, the other half of
+ * tex_luts[l] for the next (cybiko/rt.s has it in assembler) */
+#define OTHER_HALF(l) ((l) == tl_lut[0] ? tl_lut[1] : tl_lut[0])
+const u8 *ts_lut;
+s16 ts_dt;
+u8 ts_mask;
+void tsmooth(u8 *p, s16 pairs, u16 tone);
+
+#ifndef __H8300S__
+void tsmooth(u8 *p, s16 pairs, u16 tone)
+{
+    const u8 *l0 = ts_lut, *l1 = OTHER_HALF(ts_lut);
+    for (; pairs > 0; pairs--) {
+        p[0] = l0[tone >> 8] & ts_mask;
+        tone += ts_dt;
+        p[ROWBYTES] = l1[tone >> 8] & ts_mask;
+        tone += ts_dt;
+        p += 2 * ROWBYTES;
+    }
+}
+#endif
+
+static void __attribute__((noinline)) tline_smooth(s16 x, s16 y1, s16 y2)
+{
+    const texture_t *t = tl_tex;
+    const u8 *c1 = t->texels + (((tl_u >> t->shift) & ((1 << t->wbits) - 1)) << t->hbits);
+    const u8 *c2 = t->texels + ((((tl_u >> t->shift) + 1) & ((1 << t->wbits) - 1)) << t->hbits);
+    s16 fu = (s16)((tl_u & ((1 << t->shift) - 1)) << (8 - t->shift));
+    u8 *p = COLBUF(x) + y1 * ROWBYTES;
+    u8 hm = tl_hmask;
+    u16 v = (u16)(tl_v - 128), step = tl_step;  /* texel centres */
+    s16 n = y2 - y1 + 1;
+    ts_lut = tl_lut[y1 & 1];
+    ts_mask = COLMASK(x);
+    while (n > 0) {
+        /* rows left in this texel, and the tone (8.8) along them */
+        u8 r = (u8)(v >> 8), r1 = (u8)(r + 1);
+        s16 a = c1[r & hm], b = c1[r1 & hm], k;
+        u16 tone;
+        a += (s16)((c2[r & hm] - a) * fu) >> 8;
+        b += (s16)((c2[r1 & hm] - b) * fu) >> 8;
+        ts_dt = (s16)((b - a) * (s16)step);         /* tone a row */
+        tone = (u16)((a << 8) + (((b - a) * (s16)(v & 255))));
+        k = (s16)(((u16)(256 - (v & 255)) + step - 1) / step);
+        if (k > n) k = n;
+        n -= k;
+        v += (u16)(k * step);
+        if (k & 1) {
+            *p = ts_lut[tone >> 8] & ts_mask;
+            p += ROWBYTES;
+            tone += ts_dt;
+            ts_lut = OTHER_HALF(ts_lut);
+        }
+        if (k >>= 1) {
+            tsmooth(p, k, tone);
+            p += k * 2 * ROWBYTES;
+        }
+    }
+}
+
 #define set_tex_light(l) (tl_lut = (const u8 (*)[16])tex_luts[(l) >> 3])
 
 /* rows y1..y2 of a wall piece: texture t, top row at height vtop above the
@@ -284,7 +356,12 @@ IRAM_FN(void, tex_piece, (s16 x, s16 y1, s16 y2, const texture_t *t, s16 vtop, s
     tl_hmask = (u8)((1 << t->hbits) - 1);
     tl_step = (u16)(step >> 8);
     tl_v = (u16)((((s32)vtop << 8) >> t->shift) + MUL16(y1 - centery, tl_step) - (tl_step >> 1));
-    tline(x, y1, y2);
+    if (tl_step < 64 && smooth_near) {
+        tl_tex = t;
+        tl_u = u;
+        tline_smooth(x, y1, y2);
+    } else
+        tline(x, y1, y2);
 }
 
 IRAM_FN(void, render_columns, (s16 x, s16 stop))

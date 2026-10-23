@@ -21,6 +21,7 @@ _cell_run = 0xfff800 + (_cell_run_img - __iram_code);
 _vline = 0xfff800 + (_vline_img - __iram_code);
 _hw_present_rows = 0xfff800 + (_hw_present_rows_img - __iram_code);
 _tline = 0xfff800 + (_tline_img - __iram_code);
+_tsmooth = 0xfff800 + (_tsmooth_img - __iram_code);
 ___mulsi3 = 0xfff800 + (___mulsi3_img - __iram_code);
 _div32_16 = 0xfff800 + (_div32_16_img - __iram_code);
 _ldiv32_16 = 0xfff800 + (_ldiv32_16_img - __iram_code);

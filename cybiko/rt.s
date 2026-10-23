@@ -510,6 +510,37 @@ _hw_present_rows_img:
         mov.w   r0,@0xffbc:16
         rts
 
+;; void tsmooth(u8 *p, s16 pairs, u16 tone): 2*pairs rows of a smoothed
+; wall column (render.c tline_smooth): the dither byte of tone >> 8 from
+; ts_lut (this row's half of tex_luts[l]; the next row's is the other half),
+; and'ed with ts_mask, then tone += ts_dt a row.
+        .global _tsmooth_img
+_tsmooth_img:
+        stm.l   er4-er5,@-er7
+        mov.l   @_ts_lut:32,er3
+        mov.b   r3l,r4h                 ; this row's half
+        mov.b   r4h,r4l
+        xor.b   #16,r4l                 ; the next row's
+        mov.w   @_ts_dt:32,e1
+        mov.b   @_ts_mask:32,r5l
+1:      mov.b   r2h,r3l
+        or.b    r4h,r3l
+        mov.b   @er3,r5h
+        and.b   r5l,r5h
+        mov.b   r5h,@er0
+        add.w   e1,r2
+        mov.b   r2h,r3l
+        or.b    r4l,r3l
+        mov.b   @er3,r5h
+        and.b   r5l,r5h
+        mov.b   r5h,@(40,er0)
+        add.w   e1,r2
+        add.l   #80,er0
+        dec.w   #1,r1
+        bne     1b
+        ldm.l   @er7+,er4-er5
+        rts
+
 ; s16 div32_16(s32 n, s16 d): quotient must fit in 16 bits (the renderer
 ; divides once or twice a column, so these two run from on-chip RAM too)
         .global _div32_16_img

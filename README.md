@@ -27,6 +27,12 @@ The title menu trades looks for speed before a game starts:
 
 - WALLS: TEXTURED, TEXTURED NEAR (walls further than 512 units are flat
   shades) or FLAT;
+- SMOOTHING: NEAR WALLS, the default, or OFF. A texture has at most 32
+  texels along a side, so right in front of a wall a texel covers many
+  pixels and the wall looks like a few flat blocks. With smoothing, where a
+  texel is 4 rows or taller the tones are blended between neighbouring
+  texels, so the pattern stays visible as gradients. It costs speed only
+  close to walls (E1M1, facing a wall: 21 fps against 35 without);
 - DETAIL: HIGH (80 columns), LOW (40 columns of 4 pixels), LOWEST (also
   one texel for two rows) or AUTO, the default: low detail only while a
   frame takes longer than 1/15 s, high again under 1/24 s, so open areas
