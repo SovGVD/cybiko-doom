@@ -1,10 +1,10 @@
 # Doom for Cybiko
 
 > **Experimental.** Tested mostly in the Dragonfruit Cybiko emulator, on a
-> PC and on the JC4827W543 ESP32-S3 board. The first try on a real Cybiko
-> found no key working and the level pack not loading from the MP3 card;
-> both have changes for it since (see [Doom Test](#doom-test)) that are
-> not confirmed on a real Cybiko yet.
+> PC and on the JC4827W543 ESP32-S3 board. On a real Cybiko Xtreme the
+> first version saw no key; since the keys are read the way CyOS reads
+> them, the game plays there, with the level pack on the MP3 card (see
+> [Doom Test](#doom-test)).
 
 A Doom port for the Cybiko Xtreme: a native CyOS application in H8S code
 that plays the original maps on the 160x100, 4-grey screen. It is meant to run
@@ -167,7 +167,8 @@ needs from it. Put it on the Cybiko next to Doom and run it:
    them now). Each row shows the keys down as a hex mask, `ALL` all rows
    at once; `DOOM KEYS` names the game keys seen, and `SEEN` says which way
    has seen any key so far. Hold Esc for a second to quit (it also quits
-   after 60 seconds without a key).
+   after 60 seconds without a key). Only the DMA reads turn the page and
+   quit: on a real Cybiko the CPU reads give noise.
 
 A photo of each page, with a few keys held on the second, tells what goes
 wrong. The game's own "no pack" screen also shows the reason, the memory
@@ -204,8 +205,8 @@ How the game uses them:
   RAM, with the refresh timer stopped, and the last read counts. The
   matrix rows are selected by address lines, so the address has to stay
   on the bus for a while; a lone CPU read between instruction fetches
-  from DRAM likely reads before the lines settle, which would explain no
-  key working on the first real Cybiko. Emulators answer at once either
+  from DRAM reads before the lines settle: on a real Cybiko no key worked
+  that way, and they do with the DMA reads. Emulators answer at once either
   way. A read with all rows selected comes first, so a frame with no key
   down costs one burst.
 - The on-chip RAM, three times faster than DRAM, holds the renderer's hot

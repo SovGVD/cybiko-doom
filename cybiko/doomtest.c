@@ -68,13 +68,16 @@ static int any_key(void)
     u8 r;
     for (r = 0; r < 10; r++) {
         u16 sel = (u16)(0x3ff & ~(1u << r));
-        if ((u16)~key_read_cpu(sel, 1) || (u16)~key_read_cpu(sel, 12) || (u16)~key_read_dma(sel))
-            return 1;
+        if ((u16)~key_read_dma(sel)) return 1;
     }
     return 0;
 }
 
-/* wait up to secs seconds or until a key goes down (seen any way) */
+/* Only the DMA reads count for turning the page and quitting: on a real
+ * Cybiko the CPU reads give noise (the first test there quit by itself,
+ * taking it for Esc). */
+
+/* wait up to secs seconds or until a key goes down */
 static void wait_page(u16 secs)
 {
     u32 start = hw_clock();
@@ -156,9 +159,9 @@ static void page_keys(void)
             for (k = 0; k < 3; k++) {
                 n = put_hex(b, put_str(b, n, k == 0 ? "  " : k == 1 ? "  " : "     "), v[k]);
                 if (v[k]) seen[k] = 1;
-                any |= v[k];
             }
-            if (r == 5 && ((v[0] | v[1] | v[2]) & (1u << 10))) esc = 1;
+            any |= v[2];
+            if (r == 5 && (v[2] & (1u << 10))) esc = 1;
             b[n] = 0;
             line(14 + 6 * r, b, v[0] | v[1] | v[2] ? 0 : 1);
         }
