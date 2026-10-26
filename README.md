@@ -1,8 +1,10 @@
 # Doom for Cybiko
 
-> **Experimental.** Tested only in the Dragonfruit Cybiko emulator, on a
-> PC and on the JC4827W543 ESP32-S3 board. It has not been tried on a real
-> Cybiko yet.
+> **Experimental.** Tested mostly in the Dragonfruit Cybiko emulator, on a
+> PC and on the JC4827W543 ESP32-S3 board. The first try on a real Cybiko
+> found no key working and the level pack not loading from the MP3 card;
+> both have changes for it since (see [Doom Test](#doom-test)) that are
+> not confirmed on a real Cybiko yet.
 
 A Doom port for the Cybiko Xtreme: a native CyOS application in H8S code
 that plays the original maps on the 160x100, 4-grey screen. It is meant to run
@@ -99,6 +101,8 @@ This makes:
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
+- `build/doomtest.app`, the Doom Test app (see [Doom Test](#doom-test)),
+  for checking a real Cybiko.
 - `build/pack/`, the level pack: `doom.dat` (about 19 KB: the map list and
   the shrunk sprites) and a file per map, `doom_e1m1.dat` and so on
   (22-61 KB each in the shareware episode: the map with its shrunk wall
@@ -145,6 +149,30 @@ sprites from a Doom IWAD you supply into the app:
 | Help | frames per second on/off |
 | Esc | pause; Esc again quits |
 
+## Doom Test
+
+`build/doomtest.app` ("Doom Test") checks on a real Cybiko what the game
+needs from it. Put it on the Cybiko next to Doom and run it:
+
+1. **Files.** It shows the biggest block of free memory, what Doom finds
+   of its level pack and why not (`DOOM.DAT NOT FOUND`, `NO MEMORY FOR
+   THE MAPS` ...), the memory the pack asks for (`NEEDS` the sprites +
+   the biggest map, in KB), whether each map reads and unpacks (`OK`,
+   `READ`, `UNPK`), and the last file reads: the path, then the bytes read
+   of the bytes asked for (`@` the offset), or `NOT OPENED`. Any key, or
+   30 seconds, goes on.
+2. **Keys.** The key matrix, live, read three ways: one CPU read per row
+   (`CPU`, how Doom read the keys at first), twelve CPU reads in a row
+   (`X12`), and the DMA reads CyOS itself uses (`DMA`, how Doom reads
+   them now). Each row shows the keys down as a hex mask, `ALL` all rows
+   at once; `DOOM KEYS` names the game keys seen, and `SEEN` says which way
+   has seen any key so far. Hold Esc for a second to quit (it also quits
+   after 60 seconds without a key).
+
+A photo of each page, with a few keys held on the second, tells what goes
+wrong. The game's own "no pack" screen also shows the reason, the memory
+needed and the last file reads.
+
 ## Layout
 
 - `src/` the game: renderer (`render.c`), map loading (`level.c`), things
@@ -152,7 +180,8 @@ sprites from a Doom IWAD you supply into the app:
   lifts and other specials (`spec.c`), menus and the main loop (`main.c`).
 - `cybiko/` the Cybiko side: hardware access and file reading
   (`hw_cybiko.c`), runtime and division helpers (`rt.s`), the CyOS
-  functions it calls (`cyos.ld`), the link script, icon and help page.
+  functions it calls (`cyos.ld`), the link script, icon and help page;
+  `doomtest.c`, the Doom Test app.
 - `tools/wad2cy.py` converts a WAD into the level pack; `src/inflate.c`
   unpacks it;
   `tools/cybiko_mkapp.py` and `tools/cybiko_cap.py` make the CyOS `.app`.
@@ -169,6 +198,16 @@ How the game uses them:
 
 - The game turns interrupts off while it runs and so has the whole CPU;
   it resets the watchdog itself and gives CyOS its interrupts back on exit.
+- The keys are read the way CyOS 1.5.08 reads them (found by tracing its
+  keyboard reads in the emulator): DMA channel 1 in full address mode
+  reads the row's address 12 times in one burst into a word of on-chip
+  RAM, with the refresh timer stopped, and the last read counts. The
+  matrix rows are selected by address lines, so the address has to stay
+  on the bus for a while; a lone CPU read between instruction fetches
+  from DRAM likely reads before the lines settle, which would explain no
+  key working on the first real Cybiko. Emulators answer at once either
+  way. A read with all rows selected comes first, so a frame with no key
+  down costs one burst.
 - The on-chip RAM, three times faster than DRAM, holds the renderer's hot
   code (the column, texture and sprite routines from `render.c`, `hw_init` copies the `.iramfn` section there; the fill
   loops and the division and multiplication helpers from `rt.s`), its hot
@@ -199,11 +238,26 @@ How the game uses them:
   on CyOS's stack), so CyOS's own screen can show for a moment while a map
   loads.
 - The MP3 cartridge's card is CyOS's `/MP3/` only with the cartridge
-  software installed (the "MP3Soft" pack; see cybiko-docs).
+  software installed (the "MP3Soft" pack; see cybiko-docs). Files are read
+  in pieces of at most 4 KB, like the MP3 Player's reads, in case a real
+  card or its driver has trouble with long runs of blocks. With the
+  cartridge software running there is less free memory: in the emulator
+  about 240 KB with the stock RAM disk, against the 183 KB the shareware
+  pack asks for (39 KB of sprites, 144 KB for the biggest map). Bigger
+  maps, such as Freedoom's, do not fit then; the "no pack" screen says so.
 - The game's tables are stored as zeros in the module (CyOS loads only a
   small zeroed data area; the `.app` compression removes the zeros).
 - `cybiko_cap.py` makes no back reference further than 8191 bytes (the CyOS
   decompressor's window).
+
+## Credits
+
+- Doom is id Software's; this port follows its game rules and map format.
+  The screenshots use [Freedoom](https://freedoom.github.io/)'s maps.
+- What is known about the Cybiko hardware started with Tim Schuerewegen's
+  Cybiko driver in [MAME](https://www.mamedev.org/), then grew in
+  [cybiko-docs](https://github.com/SovGVD/cybiko-docs); the key reading
+  copies CyOS's own.
 
 ## Licence
 

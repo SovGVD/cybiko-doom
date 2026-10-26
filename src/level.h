@@ -124,6 +124,9 @@ extern level_t lvl;
 extern u16 validcount;
 
 int pack_open(void);                    /* 0 if the pack cannot be read */
+extern const char *pack_error;          /* why not, or why no map is offered */
+extern u32 pack_need_sprites, pack_need_map;    /* the memory it asked for */
+int level_read(int idx);    /* the map file read and unpacked: 0, else 1 (read) or 2 (unpack) failed */
 int level_count(void);
 const char *level_name(int i);
 int level_find(const char *name);       /* -1 if not in the pack */

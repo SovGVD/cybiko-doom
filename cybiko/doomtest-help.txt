@@ -1,0 +1,9 @@
+Doom Test
+
+Checks what Doom needs from this Cybiko.
+Page 1: free memory, the level pack
+(doom.dat and maps) and the last file reads.
+Any key or 30 s: page 2.
+Page 2: the keys down, read three ways.
+Press keys: SEEN says which way works.
+Hold Esc 1 s, or no key 60 s: quit.

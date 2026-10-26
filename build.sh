@@ -15,8 +15,9 @@
 # gcc-h8300-hms). APPTYPE=root puts the icon on the main desktop instead of
 # Games. TEXELS=8 or 16 sets the most texels along a wall texture's longer
 # side (default 32); TEXELS=0 leaves the textures out (flat walls only).
-# The results are build/doom.app, the game, and build/pack/, the level
-# pack: see README.md for where they go.
+# The results are build/doom.app, the game, build/pack/, the level pack
+# (see README.md for where they go), and build/doomtest.app, a test of the
+# files, memory and keys on a real Cybiko (README.md, "Doom Test").
 set -e
 cd "$(dirname "$0")"
 if [ -z "$1" ]; then
@@ -42,3 +43,16 @@ for base in 0 0x10000; do
 done
 python3 tools/cybiko_mkapp.py --at0 build/at0.coff --at1 build/at0x10000.coff \
     --name Doom --type "${APPTYPE:-game}" --icon cybiko/icon.txt --help-file cybiko/help.txt build/doom.app
+
+# Doom Test (cybiko/doomtest.c): the same code with a test screen in place
+# of the game, for checking files, memory and keys on a real Cybiko
+$CC $CFLAGS -DDOOM_TEST -c cybiko/hw_cybiko.c -o build/hw_test.o
+$CC $CFLAGS -c cybiko/doomtest.c -o build/doomtest.o
+tobjs=$(echo "$objs" | sed 's#build/hw_cybiko.o#build/hw_test.o build/doomtest.o#')
+for base in 0 0x10000; do
+    h8300-hitachi-coff-ld -mh8300s -T cybiko/link.ld -Ttext $base -o build/test$base.coff \
+        $tobjs build/rt.o
+done
+python3 tools/cybiko_mkapp.py --at0 build/test0.coff --at1 build/test0x10000.coff \
+    --name "Doom Test" --type "${APPTYPE:-game}" --icon cybiko/icon.txt \
+    --help-file cybiko/doomtest-help.txt build/doomtest.app

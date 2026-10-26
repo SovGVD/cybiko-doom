@@ -435,18 +435,46 @@ static void play(int map)
     }
 }
 
+/* "text" and n / 1024 rounded up, then "KB", at b + n; the new length */
+static int put_kb(char *b, int n, const char *text, u32 bytes)
+{
+    char t[8];
+    int k = 0;
+    u32 kb = (bytes + 1023) / 1024;
+    while (*text) b[n++] = *text++;
+    do t[k++] = (char)('0' + kb % 10); while ((kb /= 10) && k < 7);
+    while (k) b[n++] = t[--k];
+    b[n++] = ' ';
+    b[n++] = 'K';
+    b[n++] = 'B';
+    return n;
+}
+
 void doom_main(void)
 {
     int map = 0;
     render_init();
     if (!level_count()) {
-        /* no pack: tell where it goes (see hw_cybiko.c) */
+        /* no pack: say why and where it goes (see hw_cybiko.c), with
+         * what the last file reads did */
+        int i;
+        const char *l;
         clear_screen(6);
-        draw_big_text(48, 8, "DOOM", 0);
-        center_text(36, "NO DOOM.DAT OR NO MAPS", 1);
-        center_text(50, "PUT DOOM.DAT AND THE MAP FILES", 2);
-        center_text(58, "ON THE MP3 CARD OR THE CYBIKO", 2);
-        center_text(84, "ANY KEY: QUIT", 2);
+        draw_big_text(48, 2, "DOOM", 0);
+        center_text(16, pack_error ? pack_error : "NO MAPS", 0);
+        center_text(24, "PUT DOOM.DAT AND THE MAP FILES", 2);
+        center_text(30, "ON THE MP3 CARD OR THE CYBIKO", 2);
+        if (pack_need_sprites) {
+            char b[40];
+            int n = 0;
+            n = put_kb(b, n, "NEEDS ", pack_need_sprites);
+            if (pack_need_map) n = put_kb(b, n, " + ", pack_need_map);
+            b[n] = 0;
+            center_text(36, b, 1);
+        }
+        for (i = 0; i < 6 && (l = hw_file_log(i)) != NULL; i++)
+            draw_text(2, 44 + 7 * i, l, 1);
+        center_text(92, "ANY KEY: QUIT", 2);
         hw_present();
         wait_key();
         return;
