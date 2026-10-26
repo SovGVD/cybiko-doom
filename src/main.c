@@ -321,14 +321,27 @@ static u16 buttons_from_keys(u16 k)
     return b;
 }
 
-static void start_level(int map)
+/* 0 if the map does not load: then it says so, with the last file reads,
+ * and waits for a key */
+static int start_level(int map)
 {
+    int i;
+    const char *l;
     clear_screen(0);
     center_text(46, "LOADING...", 6);
     hw_present();
     render_border_dirty();
-    game_start_level(map);
     hud_valid = 0;
+    if (game_start_level(map)) return 1;
+    clear_screen(6);
+    center_text(8, "THE MAP DOES NOT LOAD", 0);
+    for (i = 0; i < 8 && (l = hw_file_log(i)) != NULL; i++)
+        draw_text(2, 20 + 7 * i, l, 1);
+    center_text(92, "ANY KEY: BACK TO THE TITLE", 2);
+    hw_present();
+    wait_key();
+    wait_release();
+    return 0;
 }
 
 /* play from map index map until the player quits or the episode ends */
@@ -338,7 +351,7 @@ static void play(int map)
     u16 prevkeys = 0;
     u8 automap = 0;
     player_reset(0);
-    start_level(map);
+    if (!start_level(map)) return;
     low_detail = detail == 3 ? 0 : detail;
     last = fpsstart = hw_clock();
     wait_release();
@@ -365,7 +378,7 @@ static void play(int map)
         }
         if (player.dead && (pressed & K_USE) && player.viewheight <= 6 * FRACUNIT) {
             player_reset(0);
-            start_level(levelidx);
+            if (!start_level(levelidx)) return;
             last = hw_clock();
             continue;
         }
@@ -395,7 +408,7 @@ static void play(int map)
                 return;
             }
             player_reset(1);
-            start_level(next);
+            if (!start_level(next)) return;
             tics_total = 0;
             last = hw_clock();
             continue;

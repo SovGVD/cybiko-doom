@@ -239,9 +239,16 @@ void hw_present(void)
     hw_present_rows(0, SCREENH);
 }
 
-/* text on the serial console (SCI1), where the emulator prints it */
+/* text on the serial console (SCI1), where the emulator prints it. SCI1
+ * is also the MP3 card's SPI port: once the card driver has used it, it is
+ * in clocked synchronous mode (SMR bit 7) and switched off (SCR = 0), and a
+ * byte written then leaves TDRE clear for good, so the driver waits on it
+ * and no card read works any more until the Cybiko restarts (on a real
+ * Cybiko: the next map did not load, after quitting too). So nothing is
+ * sent unless SCI1 is an asynchronous port with its transmitter on. */
 void hw_debug(const char *s)
 {
+    if ((REG8(0xffff80) & 0x80) || !(REG8(0xffff82) & 0x20)) return;
     while (*s) {
         u16 t = 2000;
         while (!(REG8(0xffff84) & 0x80) && --t) ;
