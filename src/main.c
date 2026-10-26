@@ -321,14 +321,27 @@ static u16 buttons_from_keys(u16 k)
     return b;
 }
 
-static void start_level(int map)
+/* 0 if the map does not load: then it says so, with the last file reads,
+ * and waits for a key */
+static int start_level(int map)
 {
+    int i;
+    const char *l;
     clear_screen(0);
     center_text(46, "LOADING...", 6);
     hw_present();
     render_border_dirty();
-    game_start_level(map);
     hud_valid = 0;
+    if (game_start_level(map)) return 1;
+    clear_screen(6);
+    center_text(8, "THE MAP DOES NOT LOAD", 0);
+    for (i = 0; i < 8 && (l = hw_file_log(i)) != NULL; i++)
+        draw_text(2, 20 + 7 * i, l, 1);
+    center_text(92, "ANY KEY: BACK TO THE TITLE", 2);
+    hw_present();
+    wait_key();
+    wait_release();
+    return 0;
 }
 
 /* play from map index map until the player quits or the episode ends */
@@ -338,7 +351,7 @@ static void play(int map)
     u16 prevkeys = 0;
     u8 automap = 0;
     player_reset(0);
-    start_level(map);
+    if (!start_level(map)) return;
     low_detail = detail == 3 ? 0 : detail;
     last = fpsstart = hw_clock();
     wait_release();
@@ -365,7 +378,7 @@ static void play(int map)
         }
         if (player.dead && (pressed & K_USE) && player.viewheight <= 6 * FRACUNIT) {
             player_reset(0);
-            start_level(levelidx);
+            if (!start_level(levelidx)) return;
             last = hw_clock();
             continue;
         }
@@ -395,7 +408,7 @@ static void play(int map)
                 return;
             }
             player_reset(1);
-            start_level(next);
+            if (!start_level(next)) return;
             tics_total = 0;
             last = hw_clock();
             continue;
@@ -435,18 +448,46 @@ static void play(int map)
     }
 }
 
+/* "text" and n / 1024 rounded up, then "KB", at b + n; the new length */
+static int put_kb(char *b, int n, const char *text, u32 bytes)
+{
+    char t[8];
+    int k = 0;
+    u32 kb = (bytes + 1023) / 1024;
+    while (*text) b[n++] = *text++;
+    do t[k++] = (char)('0' + kb % 10); while ((kb /= 10) && k < 7);
+    while (k) b[n++] = t[--k];
+    b[n++] = ' ';
+    b[n++] = 'K';
+    b[n++] = 'B';
+    return n;
+}
+
 void doom_main(void)
 {
     int map = 0;
     render_init();
     if (!level_count()) {
-        /* no pack: tell where it goes (see hw_cybiko.c) */
+        /* no pack: say why and where it goes (see hw_cybiko.c), with
+         * what the last file reads did */
+        int i;
+        const char *l;
         clear_screen(6);
-        draw_big_text(48, 8, "DOOM", 0);
-        center_text(36, "NO DOOM.DAT OR NO MAPS", 1);
-        center_text(50, "PUT DOOM.DAT AND THE MAP FILES", 2);
-        center_text(58, "ON THE MP3 CARD OR THE CYBIKO", 2);
-        center_text(84, "ANY KEY: QUIT", 2);
+        draw_big_text(48, 2, "DOOM", 0);
+        center_text(16, pack_error ? pack_error : "NO MAPS", 0);
+        center_text(24, "PUT DOOM.DAT AND THE MAP FILES", 2);
+        center_text(30, "ON THE MP3 CARD OR THE CYBIKO", 2);
+        if (pack_need_sprites) {
+            char b[40];
+            int n = 0;
+            n = put_kb(b, n, "NEEDS ", pack_need_sprites);
+            if (pack_need_map) n = put_kb(b, n, " + ", pack_need_map);
+            b[n] = 0;
+            center_text(36, b, 1);
+        }
+        for (i = 0; i < 6 && (l = hw_file_log(i)) != NULL; i++)
+            draw_text(2, 44 + 7 * i, l, 1);
+        center_text(92, "ANY KEY: QUIT", 2);
         hw_present();
         wait_key();
         return;

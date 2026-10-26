@@ -35,6 +35,9 @@ void hw_debug(const char *s);
  * the MP3 card and then in storage: read n bytes at offset off, 0 on
  * failure */
 int hw_file_read(const char *name, u32 off, void *buf, u32 n);
+/* what the last reads did, newest first (i = 0, 1, ...; NULL past the
+ * last): a line each, for the screen that says why the pack was not found */
+const char *hw_file_log(int i);
 void *hw_alloc(u32 n);      /* memory for the pack, NULL if none */
 extern const u32 HW_HZ;
 

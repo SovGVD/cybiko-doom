@@ -113,6 +113,7 @@ int hw_file_read(const char *name, u32 off, void *buf, u32 n)
 }
 
 void *hw_alloc(u32 n) { return malloc(n); }
+const char *hw_file_log(int i) { (void)i; return NULL; }
 
 void hw_init(void) {}
 void hw_shutdown(void) {}

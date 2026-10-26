@@ -70,6 +70,7 @@ static const u16 font[] = {
 static int glyph(char c)
 {
     if (c >= 'a' && c <= 'z') c -= 32;
+    if (c == '_') return 0x0007;
     if (c < ' ' || c > 'Z') return 0;
     return font[c - ' '];
 }

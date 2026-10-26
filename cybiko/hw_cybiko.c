@@ -6,7 +6,8 @@
  *   screen    HD66421 at 100000 (index) / 100001 (data); display RAM row 0
  *             is the bottom line
  *   keys      matrix at e00000: a 16-bit read at e00000 + 2 * sel gives the
- *             rows whose bit in sel is 0, a pressed key reads 0
+ *             rows whose bit in sel is 0, a pressed key reads 0; read with
+ *             the DMA controller as CyOS does (key_read_dma)
  *   clock     TPU channel 5, which CyOS runs free at clock / 256 (72 kHz)
  *   watchdog  CyOS enables it; with its interrupts off we must reset it
  *
@@ -138,9 +139,59 @@ u32 hw_clock(void)
     return clock_hi;
 }
 
+/* The keyboard is read the way CyOS 1.5.08 reads it: the DMA controller
+ * (channel 1, full address mode, burst) reads the row's address 12 times
+ * back to back into a word of on-chip RAM, and the last read counts. The
+ * matrix is selected by address lines, so it needs the address held on the
+ * bus for a while; a single CPU read between instruction fetches from
+ * other addresses likely comes too early on a real Cybiko, which read no
+ * key at all with it (emulators answer at once). Doom Test (doomtest.c)
+ * compares the ways. CyOS also stops the refresh timer (bit 0 of
+ * DRAMCR) meanwhile; done the same here. */
+#define DMA_MAR1A 0xfffef0
+#define DMA_ETCR1A 0xfffef6
+#define DMA_MAR1B 0xfffef8
+#define DMACR1A 0xffff04
+#define DMACR1B 0xffff05
+#define DMABCRH 0xffff06
+#define DMABCRL 0xffff07
+#define DRAMCR 0xfffed7
+#define REG32(a) (*(volatile u32 *)(a))
+#define KEY_READS 12
+static volatile u16 key_word IRAM;
+
+u16 key_read_dma(u16 sel)
+{
+    u16 t = 2000;
+    REG8(DRAMCR) &= 0xfe;
+    REG8(DMABCRL) &= 0xbf;
+    REG8(DMABCRL) &= 0x7f;
+    REG32(DMA_MAR1A) = 0xe00000UL + 2 * (u32)sel;
+    REG32(DMA_MAR1B) = (u32)&key_word;
+    REG16(DMA_ETCR1A) = KEY_READS;
+    REG8(DMABCRH) |= 0x80;
+    REG8(DMABCRH) |= 0x08;
+    REG8(DMABCRL) &= 0xf7;
+    REG8(DMACR1A) = 0x80;       /* words, source and destination fixed */
+    REG8(DMACR1B) = 0x07;       /* auto request, burst */
+    REG8(DMABCRL) |= 0x80;
+    REG8(DMABCRL) |= 0x40;
+    while ((REG8(DMABCRL) & 0x40) && --t) ;
+    REG8(DRAMCR) |= 0x11;
+    return key_word;
+}
+
+/* the old way, for the key test: n CPU reads in a row, the last counts */
+u16 key_read_cpu(u16 sel, u8 n)
+{
+    u16 v;
+    do v = REG16(0xe00000UL + 2 * (u32)sel); while (--n);
+    return v;
+}
+
 static u16 row(u8 r)
 {
-    return (u16)~REG16(0xe00000UL + 2 * (0x3ff & ~(1u << r)));
+    return (u16)~key_read_dma((u16)(0x3ff & ~(1u << r)));
 }
 
 /* key map: matrix row, bit, game key */
@@ -165,6 +216,7 @@ u16 hw_keys(void)
 {
     u16 rows[10], k = 0;
     u8 i;
+    if (key_read_dma(0) == 0xffff) return 0;   /* all rows at once: none down */
     for (i = 0; i < 10; i++) rows[i] = row(i);
     for (i = 0; i < sizeof keymap / sizeof keymap[0]; i++)
         if (rows[keymap[i].row] & (1u << keymap[i].bit)) k |= keymap[i].key;
@@ -174,6 +226,7 @@ u16 hw_keys(void)
 u8 hw_weapon_key(void)
 {
     u8 r;
+    if (key_read_dma(0) == 0xffff) return 0;
     for (r = 0; r < 7; r++)
         if (row((u8)(6 - r)) & 1) return (u8)(r + 1);           /* F1 is in row 6 */
     return 0;
@@ -186,9 +239,16 @@ void hw_present(void)
     hw_present_rows(0, SCREENH);
 }
 
-/* text on the serial console (SCI1), where the emulator prints it */
+/* text on the serial console (SCI1), where the emulator prints it. SCI1
+ * is also the MP3 card's SPI port: once the card driver has used it, it is
+ * in clocked synchronous mode (SMR bit 7) and switched off (SCR = 0), and a
+ * byte written then leaves TDRE clear for good, so the driver waits on it
+ * and no card read works any more until the Cybiko restarts (on a real
+ * Cybiko: the next map did not load, after quitting too). So nothing is
+ * sent unless SCI1 is an asynchronous port with its transmitter on. */
 void hw_debug(const char *s)
 {
+    if ((REG8(0xffff80) & 0x80) || !(REG8(0xffff82) & 0x20)) return;
     while (*s) {
         u16 t = 2000;
         while (!(REG8(0xffff84) & 0x80) && --t) ;
@@ -204,15 +264,93 @@ static char pack_path[32];
 static u8 file_input[96];       /* struct FileInput: 84 bytes */
 static struct { u32 off, n; void *buf; } rd;
 
+/* what the reads did, for the screens that say why the pack was not
+ * found (hw_file_log) */
+#define LOG_LINES 8
+static char file_log[LOG_LINES][40];
+static u8 log_next;
+
+static char *put_str(char *q, const char *s)
+{
+    while (*s) *q++ = *s++;
+    return q;
+}
+
+static char *put_num(char *q, long v)
+{
+    char t[12];
+    int n = 0;
+    if (v < 0) {
+        *q++ = '-';
+        v = -v;
+    }
+    do t[n++] = (char)('0' + v % 10); while ((v /= 10) && n < 11);
+    while (n) *q++ = t[--n];
+    return q;
+}
+
+#define READ_PIECE 4096L
+
+/* the result of one read; step: 0 open failed, 1 seek failed, 2 read */
+static long rd_step, rd_seek, rd_got;
+
 static long pack_read(void *unused)
 {
-    long r = -1;
     (void)unused;
+    rd_step = 0;
+    rd_seek = rd_got = 0;
     cy_FileInput_ctor(file_input, 1);
-    if (cy_FileInput_open(file_input, pack_path) && cy_Input_seek(file_input, (long)rd.off, 0) == (long)rd.off)
-        r = cy_Input_read(file_input, rd.buf, (long)rd.n);
+    if (cy_FileInput_open(file_input, pack_path)) {
+        rd_step = 1;
+        rd_seek = cy_Input_seek(file_input, (long)rd.off, 0);
+        if (rd_seek == (long)rd.off) {
+            /* in pieces no bigger than the MP3 Player's reads from the
+             * card, in case a card or its driver has trouble with long
+             * runs of blocks */
+            rd_step = 2;
+            while (rd_got < (long)rd.n) {
+                long want = (long)rd.n - rd_got, got;
+                if (want > READ_PIECE) want = READ_PIECE;
+                got = cy_Input_read(file_input, (u8 *)rd.buf + rd_got, want);
+                if (got <= 0) break;
+                rd_got += got;
+            }
+        }
+    }
     cy_Input_dtor(file_input, LEAVE_MEMORY);
-    return r;
+    return rd_step == 2 ? rd_got : -1;
+}
+
+static void log_read(void)
+{
+    char *q = file_log[log_next];
+    log_next = (u8)((log_next + 1) % LOG_LINES);
+    q = put_str(q, pack_path[0] ? pack_path : "?");
+    *q++ = ' ';
+    if (rd_step == 0) q = put_str(q, "NOT OPENED");
+    else if (rd_step == 1) {
+        q = put_str(q, "SEEK ");
+        q = put_num(q, (long)rd.off);
+        q = put_str(q, ":");
+        q = put_num(q, rd_seek);
+    } else {
+        q = put_num(q, rd_got);
+        *q++ = '/';
+        q = put_num(q, (long)rd.n);
+        if (rd.off) {
+            *q++ = '@';
+            q = put_num(q, (long)rd.off);
+        }
+    }
+    *q = 0;
+}
+
+const char *hw_file_log(int i)
+{
+    const char *l;
+    if (i < 0 || i >= LOG_LINES) return 0;
+    l = file_log[(log_next + LOG_LINES - 1 - i) % LOG_LINES];
+    return l[0] ? l : 0;
 }
 
 int hw_file_read(const char *name, u32 off, void *buf, u32 n)
@@ -232,6 +370,7 @@ int hw_file_read(const char *name, u32 off, void *buf, u32 n)
         r = cyos_call(pack_read, 0);
         clock_hi = t;           /* the time CyOS had does not count */
         clock_last = TCNT5;
+        log_read();
         if (r == (long)n) return 1;
     }
     return 0;
@@ -248,15 +387,39 @@ void *hw_alloc(u32 n)
     return 0;
 }
 
+/* the biggest block CyOS can give, in bytes (in steps of 8 KB, up to
+ * 1 MB; a binary search from 2 MB makes CyOS end the application) */
+u32 hw_free_memory(void)
+{
+    u32 kb;
+    for (kb = 8; kb <= 1024; kb += 8) {
+        void *p = cy_malloc(kb * 1024);
+        if (!p) break;
+        cy_free(p);
+    }
+    return (kb - 8) * 1024;
+}
+
+#ifdef DOOM_TEST
+void test_files(void);
+void test_main(void);
+#endif
+
 long main(int argc, char **argv, char start)
 {
     u8 i;
     (void)argc;
     (void)argv;
     if (!start) return 0;
+#ifdef DOOM_TEST
+    test_files();
+    hw_init();
+    run_on_stack(test_main, _iram_stack_top);
+#else
     pack_open();
     hw_init();
     run_on_stack(doom_main, _iram_stack_top);
+#endif
     hw_shutdown();
     for (i = 0; i < MAX_ALLOCS; i++)
         if (allocs[i]) cy_free(allocs[i]);

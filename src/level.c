@@ -62,6 +62,9 @@ static const char *map_file(const u8 *e)
     return name;
 }
 
+const char *pack_error;
+u32 pack_need_sprites, pack_need_map;
+
 int pack_open(void)
 {
     u8 head[PACK_HEAD], *p;
@@ -69,7 +72,9 @@ int pack_open(void)
     int i, maps;
     pack = NULL;
     npresent = 0;
+    pack_error = "DOOM.DAT NOT FOUND";
     if (!hw_file_read("doom.dat", 0, head, PACK_HEAD)) return 0;
+    pack_error = "DOOM.DAT IS NOT A PACK OF THIS VERSION";
     if (head[0] != 'C' || head[1] != 'Y' || head[2] != 'D' || head[3] != 'M' || rd16(head + 4) != 4)
         return 0;
     maps = rd16(head + 6);
@@ -77,10 +82,16 @@ int pack_open(void)
     spacked = rd32(head + 12);
     sraw = rd32(head + 16);
     sroom = rd32(head + 20);
+    pack_need_sprites = table + sroom;
     p = hw_alloc(table + sroom);
-    if (!p || !hw_file_read("doom.dat", 0, p, table)
-        || !hw_file_read("doom.dat", table, p + table + sroom - spacked, spacked)
-        || !inflate(p + table, sraw, p + table + sroom - spacked, spacked))
+    pack_error = "NO MEMORY FOR THE SPRITES";
+    if (!p) return 0;
+    pack_error = "DOOM.DAT DOES NOT READ";
+    if (!hw_file_read("doom.dat", 0, p, table)
+        || !hw_file_read("doom.dat", table, p + table + sroom - spacked, spacked))
+        return 0;
+    pack_error = "DOOM.DAT DOES NOT UNPACK";
+    if (!inflate(p + table, sraw, p + table + sroom - spacked, spacked))
         return 0;
     pack = p;
     sprites = p + table;
@@ -94,7 +105,9 @@ int pack_open(void)
         if (rd32(e + 12) > room) room = rd32(e + 12);
     }
     /* at a 64-byte boundary: the wall textures are aligned in the map */
+    pack_need_map = room ? room + 64 : 0;
     mapbuf = room ? hw_alloc(room + 64) : NULL;
+    pack_error = !room ? "NO MAP FILES FOUND" : !mapbuf ? "NO MEMORY FOR THE MAPS" : NULL;
     if (!mapbuf) npresent = 0;
     else mapbuf += (u8)(0 - (unsigned long)mapbuf) & 63;
     return 1;
@@ -137,19 +150,22 @@ static const u8 *part(const u8 *m, int k, s16 *count)
     return m + rd32(m + 4 + 6 * k + 2);
 }
 
+int level_read(int idx)
+{
+    const u8 *e = MAP_ENTRY(present[idx]);
+    u32 raw = rd32(e + 4), packed = rd32(e + 8), room = rd32(e + 12);
+    if (!hw_file_read(map_file(e), 4, mapbuf + room - packed, packed)) return 1;
+    if (!inflate(mapbuf, raw, mapbuf + room - packed, packed)) return 2;
+    return 0;
+}
+
 int level_load(int idx)
 {
     const u8 *m = mapbuf, *p;
     s16 i, n;
     int k;
 
-    {
-        const u8 *e = MAP_ENTRY(present[idx]);
-        u32 raw = rd32(e + 4), packed = rd32(e + 8), room = rd32(e + 12);
-        if (!hw_file_read(map_file(e), 4, mapbuf + room - packed, packed)
-            || !inflate(mapbuf, raw, mapbuf + room - packed, packed))
-            return 0;
-    }
+    if (level_read(idx)) return 0;
     arena_used = 0;
     mset(&lvl, 0, sizeof lvl);
     for (k = 0; k < 4; k++) lvl.name[k] = (char)m[k];

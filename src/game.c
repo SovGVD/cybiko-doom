@@ -43,14 +43,17 @@ static void spawn_map_thing(const mapthing_t *mt, s16 index)
     if (mo->cls == C_BURNINGBARREL || mo->cls == C_LAMP) mo->frame = 0;
 }
 
-void game_start_level(int idx)
+int game_start_level(int idx)
 {
     s16 i;
     levelidx = (s16)idx;
     mset(mobjs, 0, sizeof mobjs);
     mobj_top = 0;
     movers_clear();
-    if (!level_load(idx)) return;
+    if (!level_load(idx)) {
+        player.mo = NULL;
+        return 0;
+    }
     totalkills = totalitems = totalsecrets = 0;
     exit_requested = 0;
     player.mo = NULL;
@@ -65,6 +68,7 @@ void game_start_level(int idx)
     player.viewheight = 41 * FRACUNIT;
     player.viewz = player.mo->z + player.viewheight;
     gametic = 0;
+    return 1;
 }
 
 int game_exit_requested(void)
