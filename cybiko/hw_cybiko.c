@@ -199,17 +199,17 @@ static const struct { u8 row, bit; u16 key; } keymap[] = {
     {6, 11, K_UP}, {3, 6, K_UP},                /* Up, W */
     {6, 13, K_DOWN}, {3, 5, K_DOWN},            /* Down, S */
     {6, 14, K_LEFT}, {6, 12, K_RIGHT},
-    {4, 6, K_FIRE}, {0, 11, K_FIRE},            /* Space, K */
-    {4, 3, K_USE}, {3, 7, K_USE},               /* Enter, E */
+    {4, 3, K_FIRE}, {4, 6, K_FIRE}, {0, 11, K_FIRE},    /* Enter, Space, K */
+    {4, 4, K_USE}, {3, 7, K_USE},               /* Select, E */
     {5, 10, K_ESC},
     {8, 15, K_RUN},                             /* Shift */
-    {7, 15, K_STRAFE},                          /* Fn */
+    {5, 7, K_STRAFE}, {7, 15, K_STRAFE},        /* Tab, Fn (held) */
     {3, 2, K_STRAFEL}, {0, 10, K_STRAFEL},      /* A , */
     {2, 8, K_STRAFER}, {9, 1, K_STRAFER},       /* D . */
     {4, 5, K_MAP}, {0, 8, K_MAP},               /* Menu, M */
-    {5, 7, K_NEXTW},                            /* Tab */
+    {5, 8, K_PREVW}, {5, 9, K_NEXTW},           /* Del, Ins */
     {9, 0, K_FPS},                              /* Help */
-    {4, 4, K_TOGGLERUN},                        /* Select */
+    {2, 13, K_TOGGLERUN},                       /* R */
 };
 
 u16 hw_keys(void)

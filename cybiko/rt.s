@@ -350,7 +350,7 @@ _tline_img:
         mov.b   r0h,r3l
         mov.b   @er3,r0h
         mov.b   r0h,@(40,er4)
-        add.w   #80,r4
+        add.l   #80,er4                 ; .l: fb may cross a 64 KB line
         add.w   e6,r6
         dec.w   #1,e5
         bne     5b
@@ -372,7 +372,7 @@ _tline_img:
         xor.b   #16,r3l
         mov.b   @er3,r0h
         mov.b   r0h,@(40,er4)
-        add.w   #80,r4
+        add.l   #80,er4
         add.w   e6,r6
         dec.w   #1,e5
         bne     6b
@@ -393,7 +393,7 @@ _tline_img:
         mov.b   @er3,r0h
         and.b   r5l,r0h
         mov.b   r0h,@er4
-        add.w   #40,r4
+        add.l   #40,er4
         xor.b   #16,r1h
         add.w   e6,r6
         dec.w   #1,e5

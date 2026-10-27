@@ -54,9 +54,10 @@ The title menu trades looks for speed before a game starts:
   turn blocky and corridors stay sharp;
 - VIEW: FULL (160x84), MEDIUM (a 128x68 window) or SMALL (96x52), as
   Doom's own screen size: fewer pixels to fill, with a dark frame around;
-- COLUMNS: ALL, or ALTERNATE: each frame draws every other column of
-  the walls and things (the odd ones, then the even ones), so a still view
-  is complete and a moving one is a little rougher;
+- COLUMNS: ALTERNATE, the default: each frame draws every other column
+  of the walls and things (the odd ones, then the even ones), so a still
+  view is complete and a moving one is a little rougher. On a real Cybiko
+  the slow FSTN screen smears the line artifacts away. Or ALL;
 - WEAPON: SHOWN or HIDDEN (a little faster).
 
 Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
@@ -140,11 +141,12 @@ sprites from a Doom IWAD you supply into the app:
 | --- | --- |
 | Up/Down or W/S | walk |
 | Left/Right | turn |
-| Fn + Left/Right, A/D or `,` `.` | strafe |
-| Shift | run (Select: always run) |
-| Space or K | fire |
-| Enter or E | open doors, press switches |
-| F1-F7, Tab | weapons, next weapon |
+| Tab or Fn held + Left/Right, A/D or `,` `.` | strafe (Tab leaves the thumb on Enter) |
+| Shift | run (R: always run on/off) |
+| Enter, Space or K | fire |
+| Select or E | open doors, press switches |
+| F1-F7 | weapons |
+| Del, Ins | previous, next weapon |
 | Menu or M | map |
 | Help | frames per second on/off |
 | Esc | pause; Esc again quits |

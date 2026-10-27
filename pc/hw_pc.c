@@ -2,10 +2,12 @@
  * script, and the screen is saved as PGM pictures.
  *
  *   doom_pc doom.dat [--script FILE] [--frames N] [--shots DIR] [--every K] [--flat]
+ *           [--low|--lowest] [--interlace|--all-columns] [--sharp] [--view N]
  *
  * The script has lines "FIRST LAST KEYS": frames FIRST..LAST hold KEYS, a
  * list of letters: u d l r (arrows) f (fire) e (use) x (esc) s (run)
- * a (strafe left) b (strafe right) m (map) t (next weapon) 1-7 (weapons),
+ * a (strafe left) b (strafe right) m (map) t (next weapon) p (previous
+ * weapon) 1-7 (weapons),
  * and last zN, which at frame FIRST puts a still thing of class N (game.h)
  * in front of the player, to look at sprites. Each frame is one game tic (1/35 s). */
 #include <stdio.h>
@@ -147,6 +149,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--low")) low_detail = 1;
         else if (!strcmp(argv[i], "--lowest")) low_detail = 2;
         else if (!strcmp(argv[i], "--interlace")) interlace = 1;
+        else if (!strcmp(argv[i], "--all-columns")) interlace = 0;
         else if (!strcmp(argv[i], "--sharp")) smooth_near = 0;
         else if (!strcmp(argv[i], "--view") && i + 1 < argc) view_size = (u8)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
@@ -175,6 +178,7 @@ int main(int argc, char **argv)
                     case 'b': k |= K_STRAFER; break;
                     case 'm': k |= K_MAP; break;
                     case 't': k |= K_NEXTW; break;
+                    case 'p': k |= K_PREVW; break;
                     case 'z': script[nscript].spawn = atoi(p + 1); p += strlen(p) - 1; break;
                     default:
                         if (*p >= '1' && *p <= '7') w = (u8)(*p - '0');

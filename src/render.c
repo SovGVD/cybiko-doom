@@ -42,7 +42,9 @@ static s16 vcos, vsin;          /* Q14 */
  * (link.ld checks): tline takes a byte by setting the low address byte. */
 u8 tex_luts[32][2][16] IRAM;
 u8 low_detail;                  /* 1: columns of 4 pixels, 2: and 2 rows a texel */
-u8 interlace;                   /* every other column a frame (the title menu) */
+u8 interlace = 1;               /* every other column a frame (the title menu;
+                                 * on by default: a real Cybiko's slow FSTN
+                                 * screen smears the interlacing away) */
 u8 view_size;
 /* The 3D view's window on the screen (render_set_view): a smaller one has
  * fewer pixels to fill. Columns are numbered on the screen (two or four
@@ -1029,7 +1031,7 @@ void render_set_view(void)
     border_dirty = 1;
     /* dimming by distance: scale/16 = 5120 / distance on the whole screen */
     for (i = 0; i < 64; i++) {
-        s16 d = (s16)(112 + (i * 640) / focal);
+        s16 d = (s16)(112 + (s32)i * 640 / focal);     /* s32: int is 16 bits on the H8 */
         dimtab[i] = (u8)(d > 255 ? 255 : d);
     }
 }
