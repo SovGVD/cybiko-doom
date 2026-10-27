@@ -410,6 +410,12 @@ IRAM_FN(void, render_columns, (s16 x, s16 stop))
 
         if (yl < ctop) yl = ctop;
         if (yh > cbot) yh = cbot;
+        /* and the other way: a wall wholly above or below the open rows
+         * would otherwise put a row outside the view into the s8 clips,
+         * wrapped, and later columns drew far past fb (writing over the
+         * game's other data and CyOS's) */
+        if (yl > cbot + 1) yl = cbot + 1;
+        if (yh < ctop - 1) yh = ctop - 1;
         if (w.markceil) {
             s16 e = yl - 1;
             if (e > cbot) e = cbot;
