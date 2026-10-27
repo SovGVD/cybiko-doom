@@ -130,7 +130,7 @@ static void page_files(void)
 
 static const char *const key_names[] = {
     "UP", "DOWN", "LEFT", "RIGHT", "FIRE", "USE", "ESC", "RUN",
-    "STRAFE", "SL", "SR", "MAP", "WEAPON", "HELP", "SELECT"
+    "STRAFE", "SL", "SR", "MAP", "NEXTW", "HELP", "ALWAYSRUN", "PREVW"
 };
 
 static void page_keys(void)
@@ -167,7 +167,7 @@ static void page_keys(void)
         }
         keys = hw_keys();
         n = put_str(b, 0, "DOOM KEYS:");
-        for (k = 0; k < 15 && n < 34; k++)
+        for (k = 0; k < 16 && n < 34; k++)
             if (keys & (1u << k)) n = put_str(b, put_str(b, n, " "), key_names[k]);
         b[n] = 0;
         line(81, b, 0);

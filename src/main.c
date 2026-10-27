@@ -318,6 +318,7 @@ static u16 buttons_from_keys(u16 k)
     if (k & K_STRAFEL) b |= BT_STRAFEL;
     if (k & K_STRAFER) b |= BT_STRAFER;
     if (k & K_NEXTW) b |= BT_NEXTWEAPON;
+    if (k & K_PREVW) b |= BT_PREVWEAPON;
     return b;
 }
 
@@ -376,7 +377,7 @@ static void play(int map)
             always_run ^= 1;
             set_message(always_run ? "ALWAYS RUN ON" : "ALWAYS RUN OFF");
         }
-        if (player.dead && (pressed & K_USE) && player.viewheight <= 6 * FRACUNIT) {
+        if (player.dead && (pressed & (K_USE | K_FIRE)) && player.viewheight <= 6 * FRACUNIT) {
             player_reset(0);
             if (!start_level(levelidx)) return;
             last = hw_clock();
@@ -394,6 +395,7 @@ static void play(int map)
         while (tics--) {
             u16 b = buttons_from_keys(keys);
             if (!(pressed & K_NEXTW)) b &= ~BT_NEXTWEAPON;
+            if (!(pressed & K_PREVW)) b &= ~BT_PREVWEAPON;
             game_tic(b, hw_weapon_key());
             pressed = 0;
             tics_total++;

@@ -125,10 +125,10 @@ static void fire_weapon(void)
 static void weapon_think(u16 buttons, u8 weaponkey)
 {
     if (weaponkey && weaponkey <= 8 && player.owned[weaponkey - 1]) player.pending = weaponkey - 1;
-    if (buttons & BT_NEXTWEAPON) {
-        int i;
+    if (buttons & (BT_NEXTWEAPON | BT_PREVWEAPON)) {
+        int i, d = (buttons & BT_NEXTWEAPON) ? 1 : 7;
         for (i = 1; i <= 8; i++) {
-            int w = (player.weapon + i) & 7;
+            int w = (player.weapon + i * d) & 7;
             if (player.owned[w] && has_ammo(w)) {
                 player.pending = (u8)w;
                 break;

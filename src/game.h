@@ -147,6 +147,7 @@ extern u8 skill;                /* 0-4 as in Doom */
 #define BT_STRAFE 512
 #define BT_NEXTWEAPON 1024
 #define BT_MAP 2048
+#define BT_PREVWEAPON 4096
 
 int game_start_level(int idx);     /* 0 if the map does not load */
 void game_tic(u16 buttons, u8 weaponkey);

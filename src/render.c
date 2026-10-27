@@ -42,7 +42,9 @@ static s16 vcos, vsin;          /* Q14 */
  * (link.ld checks): tline takes a byte by setting the low address byte. */
 u8 tex_luts[32][2][16] IRAM;
 u8 low_detail;                  /* 1: columns of 4 pixels, 2: and 2 rows a texel */
-u8 interlace;                   /* every other column a frame (the title menu) */
+u8 interlace = 1;               /* every other column a frame (the title menu;
+                                 * on by default: a real Cybiko's slow FSTN
+                                 * screen smears the interlacing away) */
 u8 view_size;
 /* The 3D view's window on the screen (render_set_view): a smaller one has
  * fewer pixels to fill. Columns are numbered on the screen (two or four
