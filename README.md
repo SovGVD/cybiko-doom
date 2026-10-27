@@ -14,12 +14,16 @@ hardware (LCD controller, key matrix, timer) directly.
 
 ![E1M1, the start room](docs/images/start-room.png) ![A zombieman](docs/images/zombie.png)
 
-![The courtyard](docs/images/courtyard.png) ![The automap](docs/images/automap.png)
+![A fight](docs/images/fight.png) ![The automap](docs/images/automap.png)
 
 ![The title menu](docs/images/title.png) ![A hall](docs/images/hall.png)
 
+![The hit flash](docs/images/hit-flash.png)
+
 Screenshots from the PC build (see Layout) with Freedoom's E1M1, at twice
-the Cybiko's size; on the device the four greys are the LCD's.
+the Cybiko's size; on the device the four greys are the LCD's, and the frame
+rate is the device's (the PC build always shows 35). The last one is the
+hit flash, the screen inverted for a moment when you are hurt.
 
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
