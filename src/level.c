@@ -3,6 +3,7 @@
 #include "game.h"
 #include "hw.h"
 #include "inflate.h"
+#include "sound.h"
 
 level_t lvl;
 u16 validcount = 1;
@@ -110,6 +111,7 @@ int pack_open(void)
     pack_error = !room ? "NO MAP FILES FOUND" : !mapbuf ? "NO MEMORY FOR THE MAPS" : NULL;
     if (!mapbuf) npresent = 0;
     else mapbuf += (u8)(0 - (unsigned long)mapbuf) & 63;
+    sound_load();                       /* doom_snd.dat, if it is there */
     return 1;
 }
 

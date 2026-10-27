@@ -2,6 +2,7 @@
  * (Doom's p_user.c, p_pspr.c and p_inter.c, simplified). */
 #include "game.h"
 #include "spec.h"
+#include "sound.h"
 
 player_t player;
 
@@ -90,12 +91,18 @@ static void fire_weapon(void)
     player.weapontics = weapons[w].tics;
     player.weaponframe = 1;
     noise_alert(mo, mo);
+    {
+        static const u8 shot[8] = { 0, SFX_PISTOL, SFX_SHOTGN, SFX_PISTOL, SFX_RLAUNC,
+                                    SFX_PLASMA, SFX_BFG, SFX_SAWFUL };
+        if (shot[w]) sound_start(shot[w]);
+    }
     switch (w) {
     case WP_FIST:
     case WP_CHAINSAW: {
         s16 dmg = (s16)(((prandom() % 10) + 1) << 1);
         if (w == WP_FIST && player.powers[1]) dmg *= 10;
         if (aim_line(mo, an, 64 + 20, 8)) {
+            if (w == WP_FIST) sound_start(SFX_PUNCH);
             damage_mobj(linetarget, mo, mo, dmg);
             mo->angle = point_to_angle(linetarget->x - mo->x, linetarget->y - mo->y);
         }
@@ -267,6 +274,8 @@ void touch_special(mobj_t *sp)
     }
     if (sp->flags & MF_COUNTITEM) player.items++;
     player.bonuscount += 6;
+    sound_start(sp->cls >= C_SHOTGUN && sp->cls <= C_BFG ? SFX_WPNUP
+                : (sp->cls >= C_SOULSPHERE && sp->cls <= C_VISOR) ? SFX_GETPOW : SFX_ITEMUP);
     if (msg) set_message(msg);
     remove_mobj(sp);
 }

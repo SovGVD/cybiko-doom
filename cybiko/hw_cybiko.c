@@ -91,9 +91,63 @@ void hw_init(void)
     owned = 1;
 }
 
+/* The speaker is on P15 = TIOCB1: TPU channel 1 at clock / 16 (1.152 MHz),
+ * cleared by TGRA, toggles TIOCB1 at each TGRB (0) match, so the tone is
+ * 1.152 MHz / 2 / (TGRA + 1). CyOS's settings of the channel are kept
+ * while a tone plays and put back when it stops. */
+#define TSTR 0xffffc0
+#define TCR1 0xffffe0
+#define TMDR1 0xffffe1
+#define TIOR1 0xffffe2
+#define TIER1 0xffffe4
+#define TCNT1 0xffffe6
+#define TGR1A 0xffffe8
+#define TGR1B 0xffffea
+static u8 tone_on, tpu1_save[4], tstr_save;
+static u16 tgr1_save[2];
+
+void hw_tone(u16 divisor)
+{
+    /* 1193181 / divisor Hz = 576000 / (TGRA + 1) */
+    u16 tgra = (u16)((u32)divisor * 4827 / 10000);
+    if (!divisor || tgra < 2) {
+        if (!tone_on) return;
+        REG8(TSTR) &= 0xfd;
+        REG8(TCR1) = tpu1_save[0];
+        REG8(TMDR1) = tpu1_save[1];
+        REG8(TIOR1) = tpu1_save[2];
+        REG8(TIER1) = tpu1_save[3];
+        REG16(TGR1A) = tgr1_save[0];
+        REG16(TGR1B) = tgr1_save[1];
+        REG8(TSTR) |= tstr_save;
+        tone_on = 0;
+        return;
+    }
+    if (!tone_on) {
+        tpu1_save[0] = REG8(TCR1);
+        tpu1_save[1] = REG8(TMDR1);
+        tpu1_save[2] = REG8(TIOR1);
+        tpu1_save[3] = REG8(TIER1);
+        tgr1_save[0] = REG16(TGR1A);
+        tgr1_save[1] = REG16(TGR1B);
+        tstr_save = REG8(TSTR) & 0x02;
+        REG8(TSTR) &= 0xfd;
+        REG8(TCR1) = 0x22;          /* cleared by TGRA, clock / 16 */
+        REG8(TMDR1) = 0x00;         /* normal mode */
+        REG8(TIER1) = 0x40;         /* no interrupts */
+        REG8(TIOR1) = 0x30;         /* TIOCB1 starts at 0, toggles on TGRB */
+        REG16(TGR1B) = 0;
+        tone_on = 1;
+    }
+    REG16(TGR1A) = (u16)(tgra - 1);
+    REG16(TCNT1) = 0;               /* else a lower TGRA could be passed */
+    REG8(TSTR) |= 0x02;
+}
+
 void hw_shutdown(void)
 {
     u8 i;
+    hw_tone(0);
     owned = 0;
     mcpy((void *)IRAM_START, iram_save, sizeof iram_save);
     for (i = 0; i < 6; i++) REG8(DTCER + i) = dtcer_save[i];
@@ -109,6 +163,7 @@ static long cyos_side(void *arg)
 {
     long r;
     u8 i;
+    hw_tone(0);
     mcpy(iram_game, (void *)IRAM_START, sizeof iram_game);
     mcpy((void *)IRAM_START, iram_save, sizeof iram_save);
     for (i = 0; i < 6; i++) REG8(DTCER + i) = dtcer_save[i];

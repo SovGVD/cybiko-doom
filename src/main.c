@@ -3,8 +3,10 @@
 #include "spec.h"
 #include "render.h"
 #include "hw.h"
+#include "sound.h"
 
 static u8 show_fps = 1, always_run;
+static u8 hit_flash = 1;        /* invert the screen briefly on damage (title menu) */
 static u8 detail = 3;           /* 0 high, 1 low, 2 lowest, 3 auto (title menu) */
 static u16 fps10;               /* frames a second, times ten */
 
@@ -26,15 +28,20 @@ static void center_text(int y, const char *s, int shade)
 /* wait until all keys are up, so one press is not seen twice */
 static void wait_release(void)
 {
-    while (hw_keys() & (K_USE | K_ESC | K_FIRE | K_UP | K_DOWN | K_LEFT | K_RIGHT | K_MAP))
+    while (hw_keys() & (K_USE | K_ESC | K_FIRE | K_UP | K_DOWN | K_LEFT | K_RIGHT | K_MAP)) {
+        sound_update();
         hw_idle();
+    }
 }
 
 static u16 wait_key(void)
 {
     u16 k;
     wait_release();
-    while (!(k = hw_keys())) hw_idle();
+    while (!(k = hw_keys())) {
+        sound_update();
+        hw_idle();
+    }
     return k;
 }
 
@@ -108,10 +115,13 @@ static int render_hud(void)
 static void render_overlays(void)
 {
     if (player.messagetics) {
+        /* at the bottom, over the status bar: easier to see on the
+         * Cybiko's screen than at the top (r12freon) */
+        s16 w = (s16)(text_width(player.message) + 3);
         render_border_dirty();          /* the frame cleans it next time */
-        fill_rect(0, 0, text_width(player.message) + 3, 7, 0);
-        draw_text(1, 1, player.message, 6);
-        render_drawn_over(0, 0, (s16)(text_width(player.message) + 3), 7);
+        fill_rect(0, VIEWH - 7, w, 7, 0);
+        draw_text(1, VIEWH - 6, player.message, 6);
+        render_drawn_over(0, VIEWH - 7, w, 7);
     }
     if (player.dead) {
         fill_rect(30, 34, 100, 15, 0);
@@ -155,48 +165,41 @@ void render_automap(void)
 
 static int title(int *map)
 {
-    int sel = 0;
+    int sel = 0, i;
     for (;;) {
         u16 k;
+        const char *val[11];
+        static const char *const names[11] = {
+            "MAP", "SKILL", "ALWAYS RUN", "WEAPON", "WALLS", "SMOOTHING", "DETAIL",
+            "COLUMNS", "VIEW", "HIT FLASH", "SOUND"
+        };
+        val[0] = level_name(*map);
+        val[1] = skills[skill];
+        val[2] = always_run ? "ON" : "OFF";
+        val[3] = show_weapon ? "SHOWN" : "HIDDEN (FASTER)";
+        val[4] = show_textures == 1 ? "TEXTURED" : show_textures ? "TEXTURED NEAR" : "FLAT (FASTEST)";
+        val[5] = smooth_near ? "NEAR WALLS" : "OFF (FASTER)";
+        val[6] = detail == 3 ? "AUTO" : detail == 2 ? "LOWEST" : detail ? "LOW" : "HIGH";
+        val[7] = interlace ? "ALTERNATE (FASTER)" : "ALL";
+        val[8] = view_size == 2 ? "SMALL (FASTEST)" : view_size ? "MEDIUM (FASTER)" : "FULL";
+        val[9] = hit_flash ? "ON" : "OFF";
+        val[10] = !sound_loaded() ? "NO DOOM_SND.DAT" : sound_on ? "SPEAKER" : "OFF";
         clear_screen(0);
         fill_rect(0, 0, SCREENW, 24, 6);
         draw_big_text(48, 2, "DOOM", 0);
         draw_text(54, 17, "FOR CYBIKO", 1);
-        draw_text(10, 25, sel == 0 ? ">" : " ", 6);
-        draw_text(18, 25, "MAP", 6);
-        draw_text(70, 25, level_name(*map), 6);
-        draw_text(10, 32, sel == 1 ? ">" : " ", 6);
-        draw_text(18, 32, "SKILL", 6);
-        draw_text(70, 32, skills[skill], 6);
-        draw_text(10, 39, sel == 2 ? ">" : " ", 6);
-        draw_text(18, 39, "ALWAYS RUN", 6);
-        draw_text(70, 39, always_run ? "ON" : "OFF", 6);
-        draw_text(10, 46, sel == 3 ? ">" : " ", 6);
-        draw_text(18, 46, "WEAPON", 6);
-        draw_text(70, 46, show_weapon ? "SHOWN" : "HIDDEN (FASTER)", 6);
-        draw_text(10, 53, sel == 4 ? ">" : " ", 6);
-        draw_text(18, 53, "WALLS", 6);
-        draw_text(70, 53, show_textures == 1 ? "TEXTURED" : show_textures ? "TEXTURED NEAR" : "FLAT (FASTEST)", 6);
-        draw_text(10, 60, sel == 5 ? ">" : " ", 6);
-        draw_text(18, 60, "SMOOTHING", 6);
-        draw_text(70, 60, smooth_near ? "NEAR WALLS" : "OFF (FASTER)", 6);
-        draw_text(10, 67, sel == 6 ? ">" : " ", 6);
-        draw_text(18, 67, "DETAIL", 6);
-        draw_text(70, 67, detail == 3 ? "AUTO" : detail == 2 ? "LOWEST" : detail ? "LOW" : "HIGH", 6);
-        draw_text(10, 74, sel == 7 ? ">" : " ", 6);
-        draw_text(18, 74, "COLUMNS", 6);
-        draw_text(70, 74, interlace ? "ALTERNATE (FASTER)" : "ALL", 6);
-        draw_text(10, 81, sel == 8 ? ">" : " ", 6);
-        draw_text(18, 81, "VIEW", 6);
-        draw_text(70, 81, view_size == 2 ? "SMALL (FASTEST)" : view_size ? "MEDIUM (FASTER)" : "FULL", 6);
-        center_text(88, "ENTER: PLAY   ESC: QUIT", 4);
-        center_text(94, "HELP KEY: FPS ON/OFF", 4);
+        for (i = 0; i < 11; i++) {
+            draw_text(10, 25 + 6 * i, sel == i ? ">" : " ", 6);
+            draw_text(18, 25 + 6 * i, names[i], 6);
+            draw_text(70, 25 + 6 * i, val[i], 6);
+        }
+        center_text(93, "ENTER: PLAY  ESC: QUIT  HELP: FPS", 4);
         hw_present();
         k = wait_key();
         if (k & K_ESC) return 0;
         if (k & (K_USE | K_FIRE)) return 1;
-        if (k & K_UP) sel = sel ? sel - 1 : 8;
-        if (k & K_DOWN) sel = sel < 8 ? sel + 1 : 0;
+        if (k & K_UP) sel = sel ? sel - 1 : 10;
+        if (k & K_DOWN) sel = sel < 10 ? sel + 1 : 0;
         if (k & (K_LEFT | K_RIGHT)) {
             int d = (k & K_LEFT) ? -1 : 1;
             if (sel == 0) *map = (*map + d + level_count()) % level_count();
@@ -210,6 +213,11 @@ static int title(int *map)
             if (sel == 8) {
                 view_size = (u8)((view_size + (d < 0 ? 2 : 1)) % 3);
                 render_set_view();
+            }
+            if (sel == 9) hit_flash ^= 1;
+            if (sel == 10) {
+                sound_on ^= 1;
+                sound_start(SFX_PISTOL);
             }
         }
         if (k & K_FPS) show_fps ^= 1;
@@ -328,6 +336,8 @@ static int start_level(int map)
 {
     int i;
     const char *l;
+    screen_xor = 0;
+    sound_stop();
     clear_screen(0);
     center_text(46, "LOADING...", 6);
     hw_present();
@@ -351,6 +361,8 @@ static void play(int map)
     u32 last, fpsstart, frames = 0, tics_total = 0;
     u16 prevkeys = 0;
     u8 automap = 0;
+    s16 seen_damage = 0;
+    u32 flash_until = 0;
     player_reset(0);
     if (!start_level(map)) return;
     low_detail = detail == 3 ? 0 : detail;
@@ -362,7 +374,10 @@ static void play(int map)
         u16 pressed = keys & ~prevkeys;
         s16 tics = (s16)(((now - last) * TICRATE) / HW_HZ);
         prevkeys = keys;
+        sound_update();
         if (pressed & K_ESC) {
+            screen_xor = 0;
+            sound_stop();
             if (pause_menu()) return;
             render_border_dirty();
             last = hw_clock();
@@ -380,6 +395,7 @@ static void play(int map)
         if (player.dead && (pressed & (K_USE | K_FIRE)) && player.viewheight <= 6 * FRACUNIT) {
             player_reset(0);
             if (!start_level(levelidx)) return;
+            seen_damage = 0;
             last = hw_clock();
             continue;
         }
@@ -403,6 +419,7 @@ static void play(int map)
         }
         if (game_exit_requested()) {
             int secret = game_exit_requested() == 2, next;
+            screen_xor = 0;
             intermission(tics_total);
             next = next_map(secret);
             if (next < 0) {
@@ -411,15 +428,28 @@ static void play(int map)
             }
             player_reset(1);
             if (!start_level(next)) return;
+            seen_damage = 0;
             tics_total = 0;
             last = hw_clock();
             continue;
         }
-        if (automap) render_automap();
-        else render_view();
-        render_overlays();
-        if (render_hud()) hw_present();
-        else hw_present_rows(automap || player.messagetics ? 0 : render_rows_from(), VIEWH);
+        /* the hit flash: the screen inverted for 1/8 s when the player is
+         * hurt (r12freon's idea; the FSTN screen keeps a short one) */
+        {
+            u16 x;
+            u8 changed;
+            if (player.damagecount > seen_damage && hit_flash) flash_until = now + HW_HZ / 8;
+            seen_damage = player.damagecount;
+            x = (s32)(flash_until - now) > 0 ? 0xffff : 0;
+            changed = x != screen_xor;
+            screen_xor = x;
+            if (automap) render_automap();
+            else render_view();
+            render_overlays();
+            if (render_hud()) changed = 1;
+            if (changed) hw_present();
+            else hw_present_rows(automap || player.messagetics ? 0 : render_rows_from(), VIEWH);
+        }
         frames++;
         if (detail == 3 && !automap) {
             /* auto detail: low when a frame takes over 1/15 s, high again
@@ -496,6 +526,8 @@ void doom_main(void)
     }
     while (title(&map)) {
         play(map);
+        screen_xor = 0;
+        sound_stop();
         map = levelidx;
     }
 }

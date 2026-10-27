@@ -720,8 +720,56 @@ def main():
     fn = os.path.join(a.out, "doom.dat")
     open(fn, "wb").write(pack)
     total += len(pack)
+    snd = sound_pack(wad)
+    if snd:
+        sfn = os.path.join(a.out, "doom_snd.dat")
+        open(sfn, "wb").write(snd)
+        total += len(snd)
+        print("%s: %d bytes of PC speaker sounds" % (sfn, len(snd)))
     print("%s: %d bytes (sprites %d unpacked); %d maps, %d bytes in all"
           % (fn, len(pack), len(spr), len(blobs), total))
+
+
+# PC speaker sounds, in the order of src/sound.h (SFX_PISTOL is 1)
+SOUNDS = [
+    "PISTOL", "SHOTGN", "PUNCH", "SAWFUL", "RLAUNC", "PLASMA", "BFG",
+    "BAREXP", "FIRSHT", "FIRXPL",
+    "DOROPN", "DORCLS", "BDOPN", "BDCLS", "PSTART", "PSTOP",
+    "SWTCHN", "SWTCHX",
+    "ITEMUP", "WPNUP", "GETPOW", "TELEPT", "NOWAY", "OOF",
+    "PLPAIN", "PLDETH", "SLOP",
+    "POSIT1", "BGSIT1", "SGTSIT", "CACSIT", "BRSSIT",
+    "POPAIN", "DMPAIN",
+    "PODTH1", "BGDTH1", "SGTDTH", "CACDTH", "BRSDTH", "SKLDTH",
+    "SGTATK", "CLAW", "SKLATK",
+]
+
+
+def sound_pack(wad):
+    """doom_snd.dat: "CYSN", u16 version (1), u16 sound count, u16 tone
+    bytes, then per sound u16 offset and u16 length of its tones, then the
+    tones: the DP* lumps' PC speaker tones, 140 a second, 0 silence, else
+    an index in Doom's table of 127 pitches (src/sound.c). None if the WAD
+    has no PC speaker sounds."""
+    tones = bytearray()
+    table = struct.pack(">HH", 0, 0)            # sound 0 is none
+    found = 0
+    for name in SOUNDS:
+        d = wad.get("DP" + name)
+        if not d or len(d) < 4:
+            table += struct.pack(">HH", 0, 0)
+            continue
+        fmt, n = struct.unpack_from("<HH", d, 0)
+        t = bytes(b if b < 128 else 0 for b in d[4:4 + n])
+        if fmt != 0 or not t:
+            table += struct.pack(">HH", 0, 0)
+            continue
+        table += struct.pack(">HH", len(tones), len(t))
+        tones += t
+        found += 1
+    if not found:
+        return None
+    return b"CYSN" + struct.pack(">HHH", 1, len(SOUNDS) + 1, len(tones)) + table + bytes(tones)
 
 
 def map_file(name):

@@ -23,8 +23,10 @@
 #include "render.h"
 #include "game.h"
 #include "level.h"
+#include "sound.h"
 
 u8 fb[SCREENH * ROWBYTES], fb2[SCREENH * ROWBYTES];
+u16 screen_xor;                 /* 0xffff: the screen is shown inverted */
 u8 fb_merge;
 s16 fb_merge_y0, fb_merge_y1;
 
@@ -969,6 +971,7 @@ static void render_bsp(void)
         }
         if (bspnum == 0xffff) bspnum = 0;
         render_subsector(bspnum & ~NF_SUBSECTOR);
+        sound_update();                 /* the tones step 140 times a second */
         /* back up to the nearest node whose far side may still show */
         for (;;) {
             const node_t *bsp;
@@ -1156,7 +1159,10 @@ void render_view(void)
     last_detail = low_detail;
     col_par = (u8)(framecount & 1);
     render_bsp();
-    for (i = nvis - 1; i >= 0; i--) draw_sprite(&vis[i]);
+    for (i = nvis - 1; i >= 0; i--) {
+        draw_sprite(&vis[i]);
+        sound_update();
+    }
     col_skip = 0;
     if (show_weapon) draw_weapon();
     fb_merge = !low_detail;

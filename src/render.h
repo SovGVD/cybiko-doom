@@ -17,6 +17,7 @@ extern u8 fb[SCREENH * ROWBYTES];
  * read before it is written) and hw_present or's the two for rows
  * fb_merge_y0..fb_merge_y1-1 while fb_merge is set. */
 extern u8 fb2[SCREENH * ROWBYTES];
+extern u16 screen_xor;          /* 0xffff shows the screen inverted (the hit flash) */
 extern u8 fb_merge;
 extern s16 fb_merge_y0, fb_merge_y1;
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */
