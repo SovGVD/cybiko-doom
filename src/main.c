@@ -212,8 +212,16 @@ static int render_hud(void)
     for (k = 0; k < 8; k++) now[6] |= (s16)(player.owned[k] << k);
     now[7] = face;
     if (hud_valid) {
-        for (k = 0; k < HUD_ITEMS && now[k] == hud_shown[k]; k++) ;
-        if (k == HUD_ITEMS) return 0;
+        for (k = 0; k < HUD_ITEMS - 1 && now[k] == hud_shown[k]; k++) ;
+        if (k == HUD_ITEMS - 1) {
+            /* only the face (it changes twice a second): just its cell */
+            if (now[7] == hud_shown[7]) return 0;
+            hud_shown[7] = now[7];
+            fill_rect(72, y + 1, 16, SCREENH - y - 1, 2);
+            f = face_get(face);
+            if (f) draw_face(80 - f[0] / 2, y + 3, f);
+            return 1;
+        }
     }
     for (k = 0; k < HUD_ITEMS; k++) hud_shown[k] = now[k];
     hud_valid = 1;
