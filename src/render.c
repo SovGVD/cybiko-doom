@@ -1031,7 +1031,7 @@ void render_set_view(void)
     border_dirty = 1;
     /* dimming by distance: scale/16 = 5120 / distance on the whole screen */
     for (i = 0; i < 64; i++) {
-        s16 d = (s16)(112 + (i * 640) / focal);
+        s16 d = (s16)(112 + (s32)i * 640 / focal);     /* s32: int is 16 bits on the H8 */
         dimtab[i] = (u8)(d > 255 ? 255 : d);
     }
 }
