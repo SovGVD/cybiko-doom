@@ -120,6 +120,7 @@ typedef struct {
     s32 bob;
     u8 dead;
     s16 kills, items, secrets;
+    mobj_t *attacker;           /* who hurt the player last (the face looks there) */
     char message[24];
     s16 messagetics;
     u8 usedown;

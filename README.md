@@ -32,7 +32,15 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
   at most 32x32 cells in 16 tones, drawn in the 4 greys with a black
   outline;
 - the view is 80 columns of 2 pixels (Doom's low detail), or 40 of 4 in
-  the title menu's low detail, and 84 rows, above a 16-row status bar.
+  the title menu's low detail, and 80 rows, above a 20-row status bar.
+
+The status bar is Doom's, without its frames: ammo, health, the face,
+armor, then the arms owned (2-7), the keys, the frame rate and the weapon.
+The face is Doom's own (the WAD's STF* pictures) at half size, 12x15, in
+the 4 greys with a 2x2 dither, and it acts as in Doom: it gets bloodier as
+health drops, looks around, turns to whoever hurts you, says ouch, grins
+at a new weapon, rages when you fire for long, and shows god mode and
+death.
 
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
@@ -115,7 +123,7 @@ This makes:
 - `build/doomtest.app`, the Doom Test app (see [Doom Test](#doom-test)),
   for checking a real Cybiko.
 - `build/pack/`, the level pack: `doom.dat` (about 19 KB: the map list and
-  the shrunk sprites), a file per map, `doom_e1m1.dat` and so on
+  the shrunk sprites and the status bar faces), a file per map, `doom_e1m1.dat` and so on
   (22-61 KB each in the shareware episode: the map with its shrunk wall
   textures), and `doom_snd.dat` (3 KB, the PC speaker sounds; without it
   the game is silent). All of it is packed with Deflate. The game looks for each
@@ -276,7 +284,7 @@ How the game uses them:
   [Chocolate Doom](https://www.chocolate-doom.org/).
 - r12freon tested it on a real Cybiko Xtreme and found the key, card,
   crash and texture problems, and suggested the controls, the hit flash,
-  the message place and the speaker sounds.
+  the message place, the speaker sounds and the face in the status bar.
 
 ## Licence
 

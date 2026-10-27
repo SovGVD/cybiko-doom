@@ -472,6 +472,72 @@ def shrink_sprite(wad, name, lum):
 # ---------------------------------------------------------------------------
 # Maps
 
+# Status bar faces, in the order of src/main.c: per pain level (0 healthy ..
+# 4 nearly dead) looking ahead three ways, turned right, turned left, ouch,
+# evil grin and rampage; then god mode and dead. Doom's 24x29 faces are
+# halved to 12x15 and put in the screen's 4 greys with a 2x2 Bayer dither.
+FACE_W, FACE_H = 12, 15
+FACES = ["STF%s%d%s" % (k, l, e) if k != "OUCH" and k != "EVL" and k != "KILL" else "STF%s%d" % (k, l)
+         for l in range(5)
+         for k, e in (("ST", "0"), ("ST", "1"), ("ST", "2"), ("TR", "0"), ("TL", "0"),
+                      ("OUCH", ""), ("EVL", ""), ("KILL", ""))] + ["STFGOD0", "STFDEAD0"]
+
+
+def face_pictures(wad, lum):
+    """The FACES as FACE_W x FACE_H pictures, a nibble a pixel (the high one
+    first): 0 white .. 3 black, 15 transparent. None if the WAD lacks any
+    of them."""
+    grids = []
+    for name in FACES:
+        d = wad.get(name)
+        if d is None:
+            return None
+        w, h, lo, to, cols = picture_pixels(d)
+        g = [[None] * w for _ in range(h)]
+        for x, col in enumerate(cols):
+            for y, c in col:
+                if 0 <= y < h:
+                    g[y][x] = lum[c]
+        grids.append((w, h, g))
+    vals = sorted(v for w, h, g in grids for r in g for v in r if v is not None)
+    lo, hi = vals[len(vals) // 20], vals[-1 - len(vals) // 20]
+    bayer = ((0, 2), (3, 1))
+    out = []
+    for w, h, g in grids:
+        small = []
+        for ty in range(FACE_H):
+            row = []
+            for tx in range(FACE_W):
+                # the area of the big picture under this pixel
+                x0, x1 = tx * w / FACE_W, (tx + 1) * w / FACE_W
+                y0, y1 = ty * h / FACE_H, (ty + 1) * h / FACE_H
+                s = n = tot = 0.0
+                for y in range(int(y0), min(h, int(y1 + 0.999))):
+                    for x in range(int(x0), min(w, int(x1 + 0.999))):
+                        a = (min(x + 1, x1) - max(x, x0)) * (min(y + 1, y1) - max(y, y0))
+                        if a <= 0:
+                            continue
+                        tot += a
+                        if g[y][x] is not None:
+                            s += max(0.0, min(1.0, (g[y][x] - lo) / (hi - lo))) * a
+                            n += a
+                row.append(None if n < tot / 2 else s / n)
+            small.append(row)
+        # stretched to the face's own range, as the sprites are
+        v = sorted(x for r in small for x in r if x is not None)
+        flo, fhi = v[len(v) // 25], v[-1 - len(v) // 25]
+        pix = []
+        for j, r in enumerate(small):
+            for i, x in enumerate(r):
+                if x is None:
+                    pix.append(15)
+                    continue
+                x = max(0.0, min(1.0, (x - flo) / max(1e-3, fhi - flo)))
+                pix.append(min(3, int((1 - x) * 3 + (bayer[j % 2][i % 2] + 0.5) / 4)))
+        out.append(bytes(pix[k] << 4 | pix[k + 1] for k in range(0, len(pix), 2)))
+    return out
+
+
 def map_lumps(wad, name):
     i = wad.find(name)
     if i < 0:
@@ -666,6 +732,13 @@ def main():
             if k < len(names) and s is None:
                 missing.append(names[k])
             sil.append(s or b"")
+    # the status bar faces go in the slots after the classes' (src/level.c
+    # face_get): 2 bytes width and height, then the pixels
+    faces = face_pictures(wad, lum)
+    if faces:
+        sil += [bytes((FACE_W, FACE_H)) + f for f in faces]
+    else:
+        print("no status bar faces in this WAD")
     class_of = {}
     for dn, (cls, spr) in THINGS.items():
         # a monster whose sprite this WAD lacks cannot be in its maps

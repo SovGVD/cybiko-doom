@@ -48,6 +48,7 @@ void player_reset(int keep)
     player.dead = 0;
     player.kills = player.items = player.secrets = 0;
     player.damagecount = player.bonuscount = 0;
+    player.attacker = NULL;
     for (i = 0; i < 6; i++) player.powers[i] = 0;
     player.viewheight = 41 * FRACUNIT;
     player.deltaviewheight = 0;

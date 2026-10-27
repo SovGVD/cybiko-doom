@@ -145,6 +145,12 @@ const u8 *sprite_get(int cls, int frame)
     return off != 0xffffffffUL ? sprites + off : NULL;
 }
 
+/* the status bar faces are in the sprite slots after the classes' */
+const u8 *face_get(int i)
+{
+    return sprite_get(NUMCLASSES, i);
+}
+
 /* a map part: count and data */
 static const u8 *part(const u8 *m, int k, s16 *count)
 {

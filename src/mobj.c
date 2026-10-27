@@ -568,6 +568,7 @@ void damage_mobj(mobj_t *target, mobj_t *inflictor, mobj_t *source, s16 damage)
         player.health -= damage;
         if (player.health < 0) player.health = 0;
         player.damagecount += damage;
+        player.attacker = source;
         if (player.damagecount > 100) player.damagecount = 100;
         if (player.health > 0) sound_start(SFX_PLPAIN);
     }

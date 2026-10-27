@@ -6,7 +6,7 @@
 #define SCREENH 100
 #define ROWBYTES 40
 #define VIEWW 80                /* columns, two pixels wide each */
-#define VIEWH 84                /* rows of 3D view; the status bar is below */
+#define VIEWH 80                /* rows of 3D view; the status bar is below */
 #define CENTERY (VIEWH / 2)
 
 /* the screen: 100 rows of 40 bytes, four 2-bit pixels a byte, leftmost in
