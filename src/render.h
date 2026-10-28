@@ -6,7 +6,7 @@
 #define SCREENH 100
 #define ROWBYTES 40
 #define VIEWW 80                /* columns, two pixels wide each */
-#define VIEWH 84                /* rows of 3D view; the status bar is below */
+#define VIEWH 80                /* rows of 3D view; the status bar is below */
 #define CENTERY (VIEWH / 2)
 
 /* the screen: 100 rows of 40 bytes, four 2-bit pixels a byte, leftmost in
@@ -17,6 +17,7 @@ extern u8 fb[SCREENH * ROWBYTES];
  * read before it is written) and hw_present or's the two for rows
  * fb_merge_y0..fb_merge_y1-1 while fb_merge is set. */
 extern u8 fb2[SCREENH * ROWBYTES];
+extern u16 screen_xor;          /* 0xffff shows the screen inverted (the hit flash) */
 extern u8 fb_merge;
 extern s16 fb_merge_y0, fb_merge_y1;
 extern u8 show_weapon;          /* draw the player's weapon (the title menu) */

@@ -40,6 +40,7 @@ int hw_file_read(const char *name, u32 off, void *buf, u32 n);
  * last): a line each, for the screen that says why the pack was not found */
 const char *hw_file_log(int i);
 void *hw_alloc(u32 n);      /* memory for the pack, NULL if none */
+void hw_tone(u16 divisor);  /* a square wave of 1193181 Hz / divisor, 0 silence */
 extern const u32 HW_HZ;
 
 #endif

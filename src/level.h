@@ -134,6 +134,7 @@ int level_load(int i);                  /* 0 on failure */
 
 /* the shrunk sprite for a class and frame (see wad2cy.py), or NULL */
 const u8 *sprite_get(int cls, int frame);
+const u8 *face_get(int i);      /* a status bar face: width, height, pixels */
 
 subsector_t *point_in_subsector(s32 x, s32 y);     /* 16.16 */
 int point_on_line_side(s32 x, s32 y, const line_t *l);  /* 16.16; 0 front */

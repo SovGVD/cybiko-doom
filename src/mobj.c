@@ -3,6 +3,7 @@
  * p_maputl.c, p_sight.c and p_inter.c. */
 #include "game.h"
 #include "spec.h"
+#include "sound.h"
 
 mobj_t mobjs[MAXMOBJS];
 static s16 mobj_hint;
@@ -300,6 +301,7 @@ static void explode_missile(mobj_t *mo)
     mo->frame = 1;
     mo->tics = 8;
     mo->flags &= ~MF_MISSILE;
+    sound_at(mo, mo->cls == C_ROCKETSHOT ? SFX_BAREXP : SFX_FIRXPL);
     if (mo->cls == C_ROCKETSHOT) radius_attack(mo, mo->target, 128);
 }
 
@@ -521,8 +523,10 @@ void kill_mobj(mobj_t *source, mobj_t *target)
     if (target == player.mo) {
         player.dead = 1;
         player.health = 0;
+        sound_start(SFX_PLDETH);
         return;
     }
+    sound_say(target, SAY_DEATH);
     if (target->cls == C_BARREL) {
         target->frame = FR_ATTACK;
         target->state = S_EXPLODE;
@@ -564,7 +568,9 @@ void damage_mobj(mobj_t *target, mobj_t *inflictor, mobj_t *source, s16 damage)
         player.health -= damage;
         if (player.health < 0) player.health = 0;
         player.damagecount += damage;
+        player.attacker = source;
         if (player.damagecount > 100) player.damagecount = 100;
+        if (player.health > 0) sound_start(SFX_PLPAIN);
     }
     target->health -= damage;
     if (target->health <= 0) {
@@ -574,6 +580,7 @@ void damage_mobj(mobj_t *target, mobj_t *inflictor, mobj_t *source, s16 damage)
     if (target != player.mo && prandom() < info[target->cls].painchance
         && !(target->flags & MF_SKULLFLY)) {
         target->flags |= MF_JUSTHIT;
+        sound_say(target, SAY_PAIN);
         target->state = S_PAIN;
         target->frame = FR_PAIN;
         target->tics = 6;
