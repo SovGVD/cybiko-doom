@@ -2,6 +2,7 @@
  * with the eight-direction walk, melee, hitscan and missile attacks. */
 #include "game.h"
 #include "spec.h"
+#include "sound.h"
 
 enum { DI_EAST, DI_NE, DI_NORTH, DI_NW, DI_WEST, DI_SW, DI_SOUTH, DI_SE, DI_NODIR };
 static const s32 xspeed[8] = { FRACUNIT, 47000, 0, -47000, -FRACUNIT, -47000, 0, 47000 };
@@ -223,10 +224,12 @@ static void do_attack(mobj_t *mo)
     if (check_melee(mo)) {
         s16 dice = in->melee, d = (s16)((prandom() & 7) + 1);
         if (mo->cls == C_DEMON || mo->cls == C_SPECTRE) d = (s16)((prandom() % 10) + 1);
+        sound_say(mo, SAY_MELEE);
         damage_mobj(t, mo, mo, d * dice);
         return;
     }
     if (mo->cls == C_LOSTSOUL) {
+        sound_say(mo, SAY_MELEE);
         mo->flags |= MF_SKULLFLY;
         mo->momx = (s32)20 * fcos(mo->angle) << 2;
         mo->momy = (s32)20 * fsin(mo->angle) << 2;
@@ -238,11 +241,15 @@ static void do_attack(mobj_t *mo)
         return;
     }
     if (in->missile) {
+        sound_at(mo, SFX_FIRSHT);
         spawn_missile(mo, t, in->missile, mo->angle);
         if (mo->cls == C_BARON || mo->cls == C_CACODEMON) noise_alert(t, mo);
         return;
     }
-    if (in->shots) hitscan(mo, in->shots);
+    if (in->shots) {
+        sound_at(mo, in->shots > 1 ? SFX_SHOTGN : SFX_PISTOL);
+        hitscan(mo, in->shots);
+    }
 }
 
 /* ---- the think ---- */
@@ -264,6 +271,7 @@ void monster_think(mobj_t *mo)
             if ((mo->flags & MF_AMBUSH) && !check_sight(mo, mo->target)) return;
         } else if (!look_for_player(mo, 0))
             return;
+        sound_say(mo, SAY_SIGHT);
         mo->state = S_CHASE;
         mo->tics = 1;
         break;

@@ -25,6 +25,7 @@ void doom_main(void);
 const u32 HW_HZ = 35;
 static u32 frame, maxframes = 200, every = 10;
 static const char *shotdir = NULL;
+static int tone_log;
 static jmp_buf done;
 static struct { u32 a, b; u16 keys; u8 w; int spawn; } script[256];
 static int nscript;
@@ -76,7 +77,7 @@ static void save(const char *path)
         for (x = 0; x < SCREENW; x++) {
             int i = y * ROWBYTES + x / 4;
             int b = fb[i] | (fb_merge && y >= fb_merge_y0 && y < fb_merge_y1 ? fb2[i] : 0);
-            int v = b >> (6 - 2 * (x & 3)) & 3;
+            int v = (b ^ screen_xor) >> (6 - 2 * (x & 3)) & 3;
             fputc(lv[v], f);
         }
     fclose(f);
@@ -115,6 +116,7 @@ int hw_file_read(const char *name, u32 off, void *buf, u32 n)
 }
 
 void *hw_alloc(u32 n) { return malloc(n); }
+void hw_tone(u16 divisor) { if (tone_log) fprintf(stderr, "tone %u at frame %u\n", divisor, (unsigned)frame); }
 const char *hw_file_log(int i) { (void)i; return NULL; }
 
 void hw_init(void) {}
@@ -151,6 +153,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--interlace")) interlace = 1;
         else if (!strcmp(argv[i], "--all-columns")) interlace = 0;
         else if (!strcmp(argv[i], "--sharp")) smooth_near = 0;
+        else if (!strcmp(argv[i], "--tones")) tone_log = 1;
         else if (!strcmp(argv[i], "--view") && i + 1 < argc) view_size = (u8)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             FILE *s = fopen(argv[++i], "r");

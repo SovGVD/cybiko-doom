@@ -3,6 +3,7 @@
 #include "game.h"
 #include "hw.h"
 #include "inflate.h"
+#include "sound.h"
 
 level_t lvl;
 u16 validcount = 1;
@@ -110,6 +111,7 @@ int pack_open(void)
     pack_error = !room ? "NO MAP FILES FOUND" : !mapbuf ? "NO MEMORY FOR THE MAPS" : NULL;
     if (!mapbuf) npresent = 0;
     else mapbuf += (u8)(0 - (unsigned long)mapbuf) & 63;
+    sound_load();                       /* doom_snd.dat, if it is there */
     return 1;
 }
 
@@ -141,6 +143,12 @@ const u8 *sprite_get(int cls, int frame)
     if (!pack || slot >= rd16(pack + 8)) return NULL;
     off = rd32(pack + PACK_HEAD + 16L * rd16(pack + 6) + 4 * slot);
     return off != 0xffffffffUL ? sprites + off : NULL;
+}
+
+/* the status bar faces are in the sprite slots after the classes' */
+const u8 *face_get(int i)
+{
+    return sprite_get(NUMCLASSES, i);
 }
 
 /* a map part: count and data */

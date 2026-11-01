@@ -440,13 +440,15 @@ _cr_fill:
 ; void hw_present_rows(s16 from, s16 to): rows from..to-1 of fb to the LCD
 ; (HD66421: index register at 100000, data at 100001; its row 0 is the
 ; bottom one), rows fb_merge_y0..fb_merge_y1-1 or'ed with fb2 when
-; fb_merge is set (render.c), then reset the watchdog
+; fb_merge is set (render.c), all xor'ed with screen_xor, then reset the
+; watchdog
         .global _hw_present_rows_img
 _hw_present_rows_img:
         mov.w   r1,r3
         sub.w   r0,r3                   ; rows to copy
         ble     3f:16
         stm.l   er4-er6,@-er7
+        mov.w   @_screen_xor:32,e6      ; 0xffff inverts the picture (hit flash)
         mov.w   #99,e3
         sub.w   r0,e3                   ; the LCD's row: the top one is 99
         mov.w   #40,r1
@@ -483,20 +485,24 @@ _hw_present_rows_img:
 4:      mov.w   @er1+,r0                ; a word read costs what a byte does
         mov.w   @er4+,r6
         or.w    r6,r0
+        xor.w   e6,r0
         mov.b   r0h,@(1,er2)
         mov.b   r0l,@(1,er2)
         mov.w   @er1+,r0
         mov.w   @er4+,r6
         or.w    r6,r0
+        xor.w   e6,r0
         mov.b   r0h,@(1,er2)
         mov.b   r0l,@(1,er2)
         dec.w   #1,e0
         bne     4b
         bra     5f
 2:      mov.w   @er1+,r0
+        xor.w   e6,r0
         mov.b   r0h,@(1,er2)
         mov.b   r0l,@(1,er2)
         mov.w   @er1+,r0
+        xor.w   e6,r0
         mov.b   r0h,@(1,er2)
         mov.b   r0l,@(1,er2)
         dec.w   #1,e0

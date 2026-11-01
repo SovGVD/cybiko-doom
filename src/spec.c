@@ -4,6 +4,7 @@
  * p_ceilng.c, p_lights.c, p_telept.c and p_switch.c the Doom 1 maps use. */
 #include "game.h"
 #include "spec.h"
+#include "sound.h"
 
 u8 exit_requested;
 
@@ -185,6 +186,13 @@ static int move_plane(sector_t *sec, s16 speed, s16 dest, int crush, int floor, 
     return reached ? PL_DEST : PL_OK;
 }
 
+/* a door starts up (1) or down (-1) */
+static void door_sound(const mover_t *d, int dir)
+{
+    int blaze = d->kind >= DOOR_BLAZERAISE;
+    sound_start(dir > 0 ? (blaze ? SFX_BDOPN : SFX_DOROPN) : (blaze ? SFX_BDCLS : SFX_DORCLS));
+}
+
 static void door_think(mover_t *d)
 {
     int res;
@@ -193,6 +201,7 @@ static void door_think(mover_t *d)
         if (--d->count) return;
         if (d->kind == DOOR_NORMAL || d->kind == DOOR_BLAZERAISE) d->dir = -1;
         else if (d->kind == DOOR_CLOSE30) d->dir = 1;
+        if (d->dir) door_sound(d, d->dir);
         return;
     case -1:
         res = move_plane(d->sec, d->speed, d->sec->floorh, 0, 0, -1);
@@ -204,6 +213,7 @@ static void door_think(mover_t *d)
                 end_mover(d);
         } else if (res == PL_CRUSHED && d->kind != DOOR_CLOSE && d->kind != DOOR_BLAZECLOSE) {
             d->dir = 1;
+            door_sound(d, 1);
         }
         return;
     case 1:
@@ -238,6 +248,7 @@ static void plat_think(mover_t *p)
             p->count = p->wait;
             p->dir = 0;
             p->olddir = 1;
+            sound_start(SFX_PSTOP);
             if (p->kind != PL_PERPETUAL) end_mover(p);
         }
         break;
@@ -247,10 +258,14 @@ static void plat_think(mover_t *p)
             p->count = p->wait;
             p->dir = 0;
             p->olddir = -1;
+            sound_start(SFX_PSTOP);
         }
         break;
     case 0:
-        if (!--p->count) p->dir = p->olddir == 1 ? -1 : 1;
+        if (!--p->count) {
+            p->dir = p->olddir == 1 ? -1 : 1;
+            sound_start(SFX_PSTART);
+        }
         break;
     }
 }
@@ -350,6 +365,7 @@ static void start_door(sector_t *sec, int kind)
             /* already open */
         }
     }
+    door_sound(d, d->dir);
 }
 
 static int do_door_tag(s16 tag, int kind)
@@ -371,14 +387,17 @@ static int has_key(int special)
     case 26: case 32: case 99: case 133:
         if (player.cards & (1 | 8)) return 1;
         set_message("YOU NEED A BLUE KEY");
+        sound_start(SFX_OOF);
         return 0;
     case 27: case 34: case 136: case 137:
         if (player.cards & (2 | 16)) return 1;
         set_message("YOU NEED A YELLOW KEY");
+        sound_start(SFX_OOF);
         return 0;
     case 28: case 33: case 134: case 135:
         if (player.cards & (4 | 32)) return 1;
         set_message("YOU NEED A RED KEY");
+        sound_start(SFX_OOF);
         return 0;
     }
     return 1;
@@ -399,6 +418,8 @@ static void vertical_door(line_t *line, mobj_t *thing)
         case 1: case 26: case 27: case 28: case 117:
             if (d->dir == -1) d->dir = 1;
             else if (thing == player.mo) d->dir = -1;
+            else return;
+            door_sound(d, d->dir);
             return;
         }
         return;
@@ -510,6 +531,7 @@ static int do_plat_tag(s16 tag, int kind, line_t *line)
             p->dir = (prandom() & 1) ? 1 : -1;
             break;
         }
+        sound_start(SFX_PSTART);
     }
     return rtn;
 }
@@ -654,6 +676,7 @@ static int teleport(line_t *line, int side, mobj_t *thing)
             thing->reactiontime = 18;
             player.viewz = thing->z + player.viewheight;
         }
+        sound_at(thing, SFX_TELEPT);
         (void)oldx;
         (void)oldy;
         return 1;
@@ -816,7 +839,10 @@ int use_special_line(mobj_t *thing, line_t *line, int side)
         if (line->flags & ML_SECRET) return 0;
         if (!d->monsters) return 0;
     }
-    if (run_special(d, line, side, thing) && !d->repeat) line->special = 0;
+    if (run_special(d, line, side, thing)) {
+        if (d->trig == T_S) sound_start(d->action == A_EXIT ? SFX_SWTCHX : SFX_SWTCHN);
+        if (!d->repeat) line->special = 0;
+    }
     return 1;
 }
 
@@ -871,7 +897,10 @@ void use_lines(void)
             use_special_line(mo, best, side);
             return;
         }
-        if (best->sec[1] < 0 || !(best->flags & ML_TWOSIDED)) return;   /* oof */
+        if (best->sec[1] < 0 || !(best->flags & ML_TWOSIDED)) {
+            sound_start(SFX_NOWAY);
+            return;
+        }
         {
             sector_t *f = &lvl.sectors[best->sec[0]], *b = &lvl.sectors[best->sec[1]];
             if (MIN(f->ceilh, b->ceilh) <= MAX(f->floorh, b->floorh)) return;

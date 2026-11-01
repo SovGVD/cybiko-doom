@@ -14,12 +14,16 @@ hardware (LCD controller, key matrix, timer) directly.
 
 ![E1M1, the start room](docs/images/start-room.png) ![A zombieman](docs/images/zombie.png)
 
-![The courtyard](docs/images/courtyard.png) ![The automap](docs/images/automap.png)
+![A fight](docs/images/fight.png) ![The automap](docs/images/automap.png)
 
 ![The title menu](docs/images/title.png) ![A hall](docs/images/hall.png)
 
+![The hit flash](docs/images/hit-flash.png)
+
 Screenshots from the PC build (see Layout) with Freedoom's E1M1, at twice
-the Cybiko's size; on the device the four greys are the LCD's.
+the Cybiko's size; on the device the four greys are the LCD's, and the frame
+rate is the device's (the PC build always shows 35). The last one is the
+hit flash, the screen inverted for a moment when you are hurt.
 
 The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
 
@@ -32,7 +36,15 @@ The 18 MHz H8S is far too slow for real Doom, so the picture is simplified:
   at most 32x32 cells in 16 tones, drawn in the 4 greys with a black
   outline;
 - the view is 80 columns of 2 pixels (Doom's low detail), or 40 of 4 in
-  the title menu's low detail, and 84 rows, above a 16-row status bar.
+  the title menu's low detail, and 80 rows, above a 20-row status bar.
+
+The status bar is Doom's, without its frames: ammo, health, the face,
+armor, then the arms owned (2-7), the keys, the frame rate and the weapon.
+The face is Doom's own (the WAD's STF* pictures) at half size, 12x15, in
+the 4 greys with a 2x2 dither, and it acts as in Doom: it gets bloodier as
+health drops, looks around, turns to whoever hurts you, says ouch, grins
+at a new weapon, rages when you fire for long, and shows god mode and
+death.
 
 The game logic follows Doom: BSP rendering, blockmap collision, monster AI
 with sight checks, all weapons, pickups, doors, lifts, stairs, crushers,
@@ -58,7 +70,17 @@ The title menu trades looks for speed before a game starts:
   of the walls and things (the odd ones, then the even ones), so a still
   view is complete and a moving one is a little rougher. On a real Cybiko
   the slow FSTN screen smears the line artifacts away. Or ALL;
-- WEAPON: SHOWN or HIDDEN (a little faster).
+- WEAPON: SHOWN or HIDDEN (a little faster);
+- HIT FLASH: ON, the default: the screen is shown inverted for 1/8 s when
+  the player is hurt; or OFF;
+- SOUND: SPEAKER, the default, or OFF; it reads NO DOOM_SND.DAT when that
+  file is not found.
+
+Sound is Doom's PC speaker sound effects (the WAD's DP* lumps, one sound at
+a time, 140 tones a second) on the Cybiko's piezo speaker: TPU channel 1
+makes the square wave in hardware, so the game only changes its pitch.
+Messages ("CLIP", "YOU NEED A BLUE KEY") show at the bottom of the view,
+just above the status bar.
 
 Speed in the emulator, E1M1, frames a second (35 is the game's tic rate):
 
@@ -98,16 +120,17 @@ Needs Python 3 (with nothing extra) and the GNU H8 tools (Debian/Ubuntu:
 
 This makes:
 
-- `build/doom.app`, the game (about 59 KB). Put it on the Cybiko with the
+- `build/doom.app`, the game (about 63 KB). Put it on the Cybiko with the
   Cybiko console software, or into `/Cybiko/apps` on the Dragonfruit SD
   card. It shows up in Games (`APPTYPE=root ./build.sh ...` puts it on the
   main desktop instead).
 - `build/doomtest.app`, the Doom Test app (see [Doom Test](#doom-test)),
   for checking a real Cybiko.
 - `build/pack/`, the level pack: `doom.dat` (about 19 KB: the map list and
-  the shrunk sprites) and a file per map, `doom_e1m1.dat` and so on
+  the shrunk sprites and the status bar faces), a file per map, `doom_e1m1.dat` and so on
   (22-61 KB each in the shareware episode: the map with its shrunk wall
-  textures). All of it is packed with Deflate. The game looks for each
+  textures), and `doom_snd.dat` (3 KB, the PC speaker sounds; without it
+  the game is silent). All of it is packed with Deflate. The game looks for each
   file on the MP3 cartridge's card first (`/MP3/`, the card's top folder;
   on Dragonfruit that is `/Cybiko/card/` on the SD card) and then in the
   Cybiko's own storage (next to the app), and offers the maps whose files
@@ -261,6 +284,11 @@ How the game uses them:
   Cybiko driver in [MAME](https://www.mamedev.org/), then grew in
   [cybiko-docs](https://github.com/SovGVD/cybiko-docs); the key reading
   copies CyOS's own.
+- The PC speaker pitch table is the one in Simon Howard's
+  [Chocolate Doom](https://www.chocolate-doom.org/).
+- r12freon tested it on a real Cybiko Xtreme and found the key, card,
+  crash and texture problems, and suggested the controls, the hit flash,
+  the message place, the speaker sounds and the face in the status bar.
 
 ## Licence
 
